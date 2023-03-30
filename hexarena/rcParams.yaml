@@ -11,5 +11,6 @@ box:
       sigma_c: 0.2
       food_reward: 1.
       num_grades: 8
-      resol: 4
+      array_size: 4
+      prob_resol: 10
       eps_prob: 1.e-3

@@ -1,5 +1,6 @@
 import numpy as np
 from jarvis.config import Config
+from gym.spaces import MultiDiscrete
 
 from typing import Optional
 
@@ -16,7 +17,8 @@ class FoodBox:
         sigma_c: Optional[float] = None,
         food_reward: Optional[float] = None,
         num_grades: Optional[int] = None,
-        resol: Optional[int] = None,
+        array_size: Optional[int] = None,
+        prob_resol: Optional[int] = None,
         eps_prob: Optional[int] = None,
     ):
         r"""
@@ -31,10 +33,12 @@ class FoodBox:
         num_grades:
             Number of distinct colors on a color map, used for discretizing the
             color cue.
-        resol:
-            Spatial resolution of color cues on a screen. For example, if
-            `resol=4`, a 4*4 grid of integers will be used to represent the
-            colored pattern on the screen.
+        array_size:
+            Characterizes spatial resolution of color cues on a screen. For
+            example, if `array_size=4`, a 4*4 grid of integers will be used to
+            represent the colored pattern on the screen.
+        prob_resol:
+            Resolution of `prob`, evenly dividing [0, 1).
         eps_prob:
             A small postive number for `prob` when there is no food.
 
@@ -45,8 +49,12 @@ class FoodBox:
         self.sigma_c = sigma_c or _rcParams.sigma_c
         self.food_reward = food_reward or _rcParams.food_reward
         self.num_grades = num_grades or _rcParams.num_grades
-        self.resol = resol or _rcParams.resol
+        self.array_size = array_size or _rcParams.array_size
+        self.prob_resol = prob_resol or _rcParams.prob_resol
         self.eps_prob = eps_prob or _rcParams.eps_prob
+
+        self.state_space = MultiDiscrete([2, self.prob_resol])
+        self.observation_space = MultiDiscrete([self.num_grades]*self.array_size**2)
 
         self.rng = np.random.default_rng()
 
@@ -59,9 +67,9 @@ class FoodBox:
             A 2D int array containing color cues.
 
         """
-        p = np.full((self.resol, self.resol), fill_value=self.prob)
+        p = np.full((self.array_size, self.array_size), fill_value=self.prob)
         z = np.arctanh(p*2-1)
-        z += self.rng.normal(0, self.sigma_c, (self.resol, self.resol))
+        z += self.rng.normal(0, self.sigma_c, (self.array_size, self.array_size))
         p = (np.tanh(z)+1)/2
         colors = np.floor(p*self.num_grades).astype(int)
         return colors
