@@ -6,10 +6,10 @@ arena:
 box:
   Box:
     _init_:
-      rate: 21.0
+      rate: 0.05
       step_size: 1.0
-      sigma_c: 0.1
-      num_grades: 5
+      sigma_c: 0.2
+      food_reward: 1.
+      num_grades: 8
       resol: 4
-    reset:
-      eps: 1.e-3
+      eps_prob: 1.e-3

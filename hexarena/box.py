@@ -2,9 +2,9 @@ import numpy as np
 from jarvis.config import Config
 
 from typing import Optional
-from collections.abc import Collection
 
 from . import rcParams
+from .alias import BoxObservation
 
 class FoodBox:
     r"""Class for a food box with 2D color cue."""
@@ -14,8 +14,10 @@ class FoodBox:
         rate: Optional[float] = None,
         step_size: Optional[float] = None,
         sigma_c: Optional[float] = None,
+        food_reward: Optional[float] = None,
         num_grades: Optional[int] = None,
         resol: Optional[int] = None,
+        eps_prob: Optional[int] = None,
     ):
         r"""
         Args
@@ -33,18 +35,22 @@ class FoodBox:
             Spatial resolution of color cues on a screen. For example, if
             `resol=4`, a 4*4 grid of integers will be used to represent the
             colored pattern on the screen.
+        eps_prob:
+            A small postive number for `prob` when there is no food.
 
         """
         _rcParams = Config(rcParams.get('box.Box._init_'))
         self.rate = rate or _rcParams.rate
         self.step_size = step_size or _rcParams.step_size
         self.sigma_c = sigma_c or _rcParams.sigma_c
+        self.food_reward = food_reward or _rcParams.food_reward
         self.num_grades = num_grades or _rcParams.num_grades
         self.resol = resol or _rcParams.resol
+        self.eps_prob = eps_prob or _rcParams.eps_prob
 
         self.rng = np.random.default_rng()
 
-    def _observe(self) -> Collection[Collection[int]]:
+    def _observe(self) -> BoxObservation:
         r"""Returns color cues.
 
         Returns
@@ -60,20 +66,62 @@ class FoodBox:
         colors = np.floor(p*self.num_grades).astype(int)
         return colors
 
-    def reset(self, seed: Optional[int] = None) -> None:
-        r"""Resets the box state.
+    def reset(self, seed: Optional[int] = None) -> tuple[BoxObservation, dict]:
+        r"""Resets box state.
 
         Args
         ----
         seed:
             If provided, reset the random number generator.
 
+        Returns
+        -------
+        observation:
+            Color cue on the screen, see `_observe` for more details.
+        info:
+            Additional information.
+
         """
-        _rcParams = Config(rcParams.get('box.Box.reset'))
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.food = False
-        self.prob = _rcParams.eps
+        self.prob = self.eps_prob
         observation = self._observe()
         info = {'food': self.food, 'prob': self.prob}
         return observation, info
+
+    def step(self, action: int) -> tuple[BoxObservation, float, bool, bool, dict]:
+        r"""Updates box state.
+
+        Args
+        ----
+        action:
+            A binary action for 'no push' (0) and 'push' (1).
+
+        Returns
+        -------
+        observation:
+            Color cue on the screen, see `_observe` for more details.
+        reward:
+            Food reward from the box. Action costs are not considered here.
+        terminated, truncated:
+            Termination flags.
+        info:
+            Additional information.
+
+        """
+        assert action==0 or action==1
+        reward = 0.
+        if action==0: # no push
+            p = 1-np.exp(-self.rate*self.step_size)
+            if self.rng.random()<p:
+                self.food = True
+            self.prob = 1-(1-self.prob)*(1-p)
+        else: # push
+            if self.food:
+                reward += self.food_reward
+            self.food = False
+            self.prob = self.eps_prob
+        observation = self._observe()
+        info = {'food': self.food, 'prob': self.prob}
+        return observation, reward, False, False, info

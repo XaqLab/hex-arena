@@ -9,9 +9,10 @@ class TestFoodBox(unittest.TestCase):
 
     def test_basics(self):
         box = FoodBox()
-        box = FoodBox(rate=15)
+        box = FoodBox(rate=0.1)
         box = FoodBox(step_size=0.5)
         box = FoodBox(sigma_c=0.)
+        box = FoodBox(food_reward=10.)
         box = FoodBox(num_grades=6)
         box = FoodBox(resol=6)
 
@@ -35,7 +36,16 @@ class TestFoodBox(unittest.TestCase):
         self.assertFalse(np.all(o_0==o_2))
 
     def test_step(self):
-        ...
+        resol = 2
+        box = FoodBox(resol=resol)
+        box.reset()
+        for action in range(2):
+            observation, reward, _, _, _ = box.step(action)
+            self.assertIsInstance(observation, Array)
+            self.assertEqual(observation.shape, (resol, resol))
+            self.assertIsInstance(reward, float)
+        with self.assertRaises(Exception):
+            box.step(2)
 
 
 if __name__=='__main__':
