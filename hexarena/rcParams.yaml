@@ -1,0 +1,4 @@
+arena:
+  Arena:
+    _init_:
+      resol: 2

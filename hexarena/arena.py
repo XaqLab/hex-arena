@@ -1,5 +1,7 @@
 import numpy as np
+from jarvis.config import Config
 
+from . import rcParams
 from .alias import Axes
 
 
@@ -24,6 +26,8 @@ class Arena:
             anchors: six at the corner and one at the center.
 
         """
+        _rcParams = Config(rcParams.get('arena.Arena._init_'))
+        resol = resol or _rcParams.resol
         assert resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
@@ -53,7 +57,7 @@ class Arena:
 
     def plot_map(self,
         ax: Axes,
-    ):
+    ) -> None:
         _idxs = self.corner_idxs+[self.corner_idxs[0]]
         ax.plot(
             self.anchors[_idxs, 0], self.anchors[_idxs, 1],
