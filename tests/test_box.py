@@ -54,6 +54,20 @@ class TestFoodBox(unittest.TestCase):
         with self.assertRaises(Exception):
             box.step(2)
 
+    def test_state(self):
+        num_grades = 10
+        box = FoodBox(num_grades=num_grades)
+        box.reset()
+        state = box.get_state()
+        self.assertEqual(len(state), 2)
+        self.assertTrue(0<=state[0]<2)
+        self.assertTrue(0<=state[1]<box.num_grades)
+        cue = 8
+        state = (0, cue)
+        box.set_state(state)
+        self.assertFalse(box.food)
+        self.assertTrue(cue/num_grades<=box.cue<(cue+1)/num_grades)
+
 
 if __name__=='__main__':
     unittest.main()

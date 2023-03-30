@@ -5,7 +5,7 @@ from jarvis.config import Config
 from typing import Optional
 
 from . import rcParams
-from .alias import BoxObservation
+from .alias import BoxState
 
 class FoodBox:
     r"""Class for a food box with 2D color cue."""
@@ -135,3 +135,13 @@ class FoodBox:
             self.cue = self.eps
         self.render()
         return reward
+
+    def get_state(self) -> BoxState:
+        r"""Returns box state."""
+        state = (int(self.food), int(self.cue*self.num_grades))
+        return state
+
+    def set_state(self, state: BoxState) -> None:
+        r"""Sets box state."""
+        self.food = bool(state[0])
+        self.cue = (float(state[1])+0.5)/self.num_grades
