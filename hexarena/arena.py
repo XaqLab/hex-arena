@@ -95,3 +95,10 @@ class Arena:
         ax.set_ylim([-1.1, 1.1])
         ax.set_yticks([-1, 1])
         ax.set_aspect('equal')
+
+    def get_state_index(self,
+        pos: tuple[float, float],
+    ) -> int:
+        d = ((np.array(pos)-self.anchors)**2).sum(axis=1)**0.5
+        s_idx = np.argmin(d)
+        return s_idx
