@@ -12,4 +12,4 @@ box:
       num_grades: 5
       resol: 4
     reset:
-      eps: 1.e-4
+      eps: 1.e-3

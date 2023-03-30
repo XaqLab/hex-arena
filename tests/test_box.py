@@ -1,5 +1,6 @@
 import unittest
 
+import numpy as np
 from hexarena.box import FoodBox
 from hexarena.alias import Array
 
@@ -25,6 +26,13 @@ class TestFoodBox(unittest.TestCase):
             self.assertGreaterEqual(_o[i], 0)
             self.assertLess(_o[i], num_grades)
         self.assertIsInstance(info, dict)
+
+        box = FoodBox(num_grades=100, resol=100, sigma_c=2)
+        o_0, _ = box.reset(seed=0)
+        o_1, _ = box.reset(seed=0)
+        o_2, _ = box.reset(seed=1)
+        self.assertTrue(np.all(o_0==o_1))
+        self.assertFalse(np.all(o_0==o_2))
 
     def test_step(self):
         ...

@@ -45,6 +45,14 @@ class FoodBox:
         self.rng = np.random.default_rng()
 
     def _observe(self) -> Collection[Collection[int]]:
+        r"""Returns color cues.
+
+        Returns
+        -------
+        colors: (resol*resol)
+            A 2D int array containing color cues.
+
+        """
         p = np.full((self.resol, self.resol), fill_value=self.prob)
         z = np.arctanh(p*2-1)
         z += self.rng.normal(0, self.sigma_c, (self.resol, self.resol))
@@ -53,6 +61,14 @@ class FoodBox:
         return colors
 
     def reset(self, seed: Optional[int] = None) -> None:
+        r"""Resets the box state.
+
+        Args
+        ----
+        seed:
+            If provided, reset the random number generator.
+
+        """
         _rcParams = Config(rcParams.get('box.Box.reset'))
         if seed is not None:
             self.rng = np.random.default_rng(seed)

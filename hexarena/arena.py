@@ -96,10 +96,9 @@ class Arena:
             ax.plot(segment[0], segment[1], color='green', linestyle='--', linewidth=1)
 
         ax.set_xlim([-1.1, 1.1])
-        ax.set_xticks([-1, 1])
         ax.set_ylim([-1.1, 1.1])
-        ax.set_yticks([-1, 1])
         ax.set_aspect('equal')
+        ax.set_axis_off()
 
     def is_inside(self,
         pos: tuple[float, float],
