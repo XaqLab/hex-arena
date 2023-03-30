@@ -4,6 +4,8 @@ from numpy.random import Generator as RandGen
 from matplotlib.axes import Axes
 
 from collections.abc import Collection
+
+from irc.alias import EnvParam
 BoxObservation = Collection[Collection[int]]
 BoxState = tuple[int, int]
 MonkeyState = tuple[int, int]

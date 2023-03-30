@@ -58,15 +58,25 @@ class TestFoodBox(unittest.TestCase):
         num_grades = 10
         box = FoodBox(num_grades=num_grades)
         box.reset()
-        state = box.get_state()
-        self.assertEqual(len(state), 2)
-        self.assertTrue(0<=state[0]<2)
-        self.assertTrue(0<=state[1]<box.num_grades)
+        food, cue = box.get_state()
+        self.assertTrue(0<=food<2)
+        self.assertTrue(0<=cue<box.num_grades)
         cue = 8
         state = (0, cue)
         box.set_state(state)
         self.assertFalse(box.food)
         self.assertTrue(cue/num_grades<=box.cue<(cue+1)/num_grades)
+
+    def test_param(self):
+        box = FoodBox()
+        rate, sigma = box.get_param()
+        self.assertGreater(rate, 0)
+        self.assertGreaterEqual(sigma, 0)
+        rate, sigma = 1/35, 0.
+        param = (rate, sigma)
+        box.set_param(param)
+        self.assertEqual(box.rate, rate)
+        self.assertEqual(box.sigma, sigma)
 
 
 if __name__=='__main__':

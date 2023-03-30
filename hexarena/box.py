@@ -5,7 +5,7 @@ from jarvis.config import Config
 from typing import Optional
 
 from . import rcParams
-from .alias import BoxState
+from .alias import BoxState, EnvParam
 
 class FoodBox:
     r"""Class for a food box with 2D color cue."""
@@ -135,6 +135,19 @@ class FoodBox:
             self.cue = self.eps
         self.render()
         return reward
+
+    def get_param(self) -> EnvParam:
+        r"""Returns box parameters.
+
+        Poisson rate and noise level are treated as box parameters. Food reward
+        `reward` will be treated as a fixed constant.
+
+        """
+        return (self.rate, self.sigma)
+
+    def set_param(self, param: EnvParam) -> None:
+        r"""Sets box parameters."""
+        self.rate, self.sigma = param
 
     def get_state(self) -> BoxState:
         r"""Returns box state."""
