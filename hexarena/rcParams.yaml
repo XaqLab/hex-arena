@@ -2,3 +2,12 @@ arena:
   Arena:
     _init_:
       resol: 2
+
+box:
+  Box:
+    _init_:
+      rate: 21.0
+      step_size: 1.0
+      sigma_c: 0.1
+      num_grades: 5
+      resol: 4

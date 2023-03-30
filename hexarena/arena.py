@@ -29,11 +29,10 @@ class Arena:
 
         """
         _rcParams = Config(rcParams.get('arena.Arena._init_'))
-        resol = resol or _rcParams.resol
-        assert resol%2==0, (
+        self.resol = resol or _rcParams.resol
+        assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
-        self.resol = resol
 
         self.num_states = 3*self.resol**2+3*self.resol+1
         anchors = []
