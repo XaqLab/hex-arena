@@ -36,9 +36,11 @@ class Arena:
 
         self.num_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
-        self.corner_idxs, self.box_idxs = [], []
+        self.corners, self.boxes = [], []
+        self.inners, self.outers = [], []
         for i in range(self.resol+1):
             if i==0:
+                self.center = 0
                 anchors.append([0, 0])
                 continue
             r = i/self.resol
@@ -47,10 +49,15 @@ class Arena:
                 x0, y0 = r*np.cos(theta), r*np.sin(theta)
                 theta += 2*np.pi/3
                 for k in range(i):
-                    if i==self.resol and k==0:
-                        self.corner_idxs.append(len(anchors))
-                    if i==self.resol and j%2==1 and k==self.resol//2:
-                        self.box_idxs.append(len(anchors))
+                    t_idx = len(anchors)
+                    if i==self.resol:
+                        self.outers.append(t_idx)
+                        if k==0:
+                            self.corners.append(t_idx)
+                        elif j%2==1 and k==self.resol//2:
+                            self.boxes.append(t_idx)
+                    else:
+                        self.inners.append(t_idx)
                     x = x0+k/self.resol*np.cos(theta)
                     y = y0+k/self.resol*np.sin(theta)
                     anchors.append([x, y])
@@ -59,7 +66,7 @@ class Arena:
     def plot_map(self,
         ax: Axes,
     ) -> None:
-        _idxs = self.corner_idxs+[self.corner_idxs[0]]
+        _idxs = self.corners+[self.corners[0]]
         ax.plot(
             self.anchors[_idxs, 0], self.anchors[_idxs, 1],
             color='darkgray', linewidth=3, zorder=0
@@ -69,7 +76,7 @@ class Arena:
             s=40, marker='X', color='yellow',
         )
         ax.scatter(
-            self.anchors[self.box_idxs, 0], self.anchors[self.box_idxs, 1],
+            self.anchors[self.boxes, 0], self.anchors[self.boxes, 1],
             s=120, marker='o', facecolors='none', edgecolors='red', linewidths=2,
         )
 
@@ -106,8 +113,8 @@ class Arena:
         r"""Returns if a position is inside the arena."""
         x, y = pos
         for i in range(6):
-            x0, y0 = self.anchors[self.corner_idxs[i]]
-            x1, y1 = self.anchors[self.corner_idxs[(i+1)%6]]
+            x0, y0 = self.anchors[self.corners[i]]
+            x1, y1 = self.anchors[self.corners[(i+1)%6]]
             dx, dy = x-x0, y-y0
             dx1, dy1 = x1-x0, y1-y0
             if dx*dy1-dx1*dy>0:
@@ -115,10 +122,10 @@ class Arena:
         return True
 
     def get_tile_index(self,
-        pos: tuple[float, float],
+        xy: tuple[float, float],
     ) -> int:
         r"""Get integer index of a position."""
-        assert self.is_inside(pos), f"Position {tuple(pos)} is outside the arena."
-        d = ((np.array(pos)-self.anchors)**2).sum(axis=1)**0.5
+        assert self.is_inside(xy), f"Position {tuple(xy)} is outside the arena."
+        d = ((np.array(xy)-self.anchors)**2).sum(axis=1)**0.5
         s_idx = np.argmin(d)
         return s_idx

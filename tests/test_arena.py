@@ -13,6 +13,11 @@ class TestArena(unittest.TestCase):
             arena = Arena(1)
         for resol in [2, 4, 6]:
             arena = Arena(resol=resol)
+            self.assertEqual(len(arena.corners), 6)
+            self.assertEqual(len(arena.boxes), 3)
+            self.assertEqual(arena.center, 0)
+            self.assertEqual(len(arena.inners), 3*resol**2-3*resol)
+            self.assertEqual(len(arena.outers), 6*resol)
 
     def test_is_inside(self):
         arena = Arena()
@@ -21,7 +26,7 @@ class TestArena(unittest.TestCase):
         for x, y in [(0.5**0.5, 0.5**0.5), (0, -0.87)]:
             self.assertFalse(arena.is_inside((x, y)))
 
-    def test_get_state_index(self):
+    def test_get_tile_index(self):
         arena = Arena()
         for _ in range(5):
             r = rng.uniform(0, 1)
