@@ -17,5 +17,12 @@ class TestMonkey(unittest.TestCase):
             tuple(monkey.state_space.nvec), tuple([arena.num_tiles]*2),
         )
 
+    def test_reset(self):
+        monkey = Monkey()
+        monkey.reset()
+        for x in [monkey.pos, monkey.gaze]:
+            self.assertGreaterEqual(x, 0)
+            self.assertLess(x, monkey.arena.num_tiles)
+
 if __name__=='__main__':
     unittest.main()
