@@ -34,7 +34,7 @@ class Arena:
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
 
-        self.num_states = 3*self.resol**2+3*self.resol+1
+        self.num_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
         self.corner_idxs, self.box_idxs = [], []
         for i in range(self.resol+1):
@@ -114,7 +114,7 @@ class Arena:
                 return False
         return True
 
-    def get_state_index(self,
+    def get_tile_index(self,
         pos: tuple[float, float],
     ) -> int:
         r"""Get integer index of a position."""

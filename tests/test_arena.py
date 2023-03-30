@@ -28,11 +28,11 @@ class TestArena(unittest.TestCase):
             theta = rng.uniform(0, 2*np.pi)
             x, y = r*np.cos(theta), r*np.sin(theta)
             if arena.is_inside((x, y)):
-                s_idx = arena.get_state_index((x, y))
-                self.assertLess(s_idx, arena.num_states)
+                s_idx = arena.get_tile_index((x, y))
+                self.assertLess(s_idx, arena.num_tiles)
             else:
                 with self.assertRaises(Exception):
-                    arena.get_state_index((x, y))
+                    arena.get_tile_index((x, y))
 
 
 if __name__=='__main__':
