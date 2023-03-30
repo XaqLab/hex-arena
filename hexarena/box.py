@@ -54,7 +54,7 @@ class FoodBox:
 
         self.mat_size = int(self.num_patches**0.5)
         assert self.mat_size**2==self.num_patches, (
-            f"'num_patches' ({self.num_patches}) must be a squre of an integer."
+            f"`num_patches` ({self.num_patches}) must be a squre of an integer."
         )
 
         # state: (food, cue)
@@ -143,7 +143,8 @@ class FoodBox:
         `reward` will be treated as a fixed constant.
 
         """
-        return (self.rate, self.sigma)
+        param = (self.rate, self.sigma)
+        return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets box parameters."""
