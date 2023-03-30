@@ -59,8 +59,6 @@ class FoodBox:
 
         # state: (food, cue)
         self.state_space = MultiDiscrete([2, self.num_grades])
-        # observation: (*colors)
-        self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
         # param: (rate, sigma)
         self.param_low = [0, 0]
         self.param_high = [np.inf, np.inf]

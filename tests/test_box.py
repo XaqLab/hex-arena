@@ -18,8 +18,6 @@ class TestFoodBox(unittest.TestCase):
         )
         self.assertIsInstance(box.state_space, MultiDiscrete)
         self.assertEqual(tuple(box.state_space.nvec), (2, num_grades))
-        self.assertIsInstance(box.observation_space, MultiDiscrete)
-        self.assertEqual(tuple(box.observation_space.nvec), tuple([num_grades]*num_patches))
 
     def test_reset(self):
         num_grades, num_patches = 3, 1
