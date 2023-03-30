@@ -1,6 +1,8 @@
+import numpy as np
 from jarvis.config import Config
 
 from typing import Optional
+from collections.abc import Collection
 
 from . import rcParams
 
@@ -8,6 +10,7 @@ class Box:
     r"""Class for a food box with 2D color cue."""
 
     def __init__(self,
+        *,
         rate: Optional[float] = None,
         step_size: Optional[float] = None,
         sigma_c: Optional[float] = None,
@@ -38,3 +41,23 @@ class Box:
         self.sigma_c = sigma_c or _rcParams.sigma_c
         self.num_grades = num_grades or _rcParams.num_grades
         self.resol = resol or _rcParams.resol
+
+        self.rng = np.random.default_rng()
+
+    def _observe(self) -> Collection[Collection[int]]:
+        p = np.full((self.resol, self.resol), fill_value=self.prob)
+        z = np.arctanh(p*2-1)
+        z += self.rng.normal(0, self.sigma_c, (self.resol, self.resol))
+        p = (np.tanh(z)+1)/2
+        colors = np.floor(p*self.num_grades).astype(int)
+        return colors
+
+    def reset(self, seed: Optional[int] = None) -> None:
+        _rcParams = Config(rcParams.get('box.Box.reset'))
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        self.food = False
+        self.prob = _rcParams.eps
+        observation = self._observe()
+        info = {'food': self.food, 'prob': self.prob}
+        return observation, info
