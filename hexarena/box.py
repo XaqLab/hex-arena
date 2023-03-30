@@ -1,6 +1,6 @@
 import numpy as np
-from jarvis.config import Config
 from gym.spaces import MultiDiscrete
+from jarvis.config import Config
 
 from typing import Optional
 

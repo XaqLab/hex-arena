@@ -16,9 +16,9 @@ class TestFoodBox(unittest.TestCase):
             num_grades=6, array_size=4, prob_resol=prob_resol,
         )
         self.assertIsInstance(box.state_space, MultiDiscrete)
-        self.assertTrue(tuple(box.state_space.nvec)==(2, prob_resol))
+        self.assertEqual(tuple(box.state_space.nvec), (2, prob_resol))
         self.assertIsInstance(box.observation_space, MultiDiscrete)
-        self.assertTrue(tuple(box.observation_space.nvec)==tuple([num_grades]*array_size**2))
+        self.assertEqual(tuple(box.observation_space.nvec), tuple([num_grades]*array_size**2))
 
     def test_reset(self):
         num_grades, resol = 3, 1
