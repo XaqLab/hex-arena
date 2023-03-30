@@ -6,7 +6,7 @@ from collections.abc import Collection
 
 from . import rcParams
 
-class Box:
+class FoodBox:
     r"""Class for a food box with 2D color cue."""
 
     def __init__(self,
