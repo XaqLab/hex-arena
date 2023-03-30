@@ -26,13 +26,26 @@ class Monkey:
             arena: Arena = arena.instantiate()
         self.arena = arena
 
-        # state (pos, gaze)
+        # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
 
         self.rng = np.random.default_rng()
 
-    def reset(self, seed: Optional[int] = None):
+    def reset(self, seed: Optional[int] = None) -> None:
+        r"""Resets the monkey state.
+
+        Put the monkey on the outer region randomly, and sets up the gaze
+        position to a random tile in inner region.
+
+        """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.pos = self.rng.choice(self.arena.outers)
         self.gaze = self.rng.choice(self.arena.inners)
+
+    def get_state(self) -> MonkeyState:
+        state = (self.pos, self.gaze)
+        return state
+
+    def set_state(self, state: MonkeyState) -> None:
+        self.pos, self.gaze = state
