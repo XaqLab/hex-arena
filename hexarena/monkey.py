@@ -45,6 +45,9 @@ class Monkey:
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
+        # param: (push_cost, move_price, look_price)
+        self.param_low = [0, 0, 0]
+        self.param_high = [np.inf, np.inf, np.inf]
 
         self.rng = np.random.default_rng()
 
@@ -70,11 +73,7 @@ class Monkey:
         self.push_cost, self.move_price, self.look_price = param
 
     def get_state(self) -> MonkeyState:
-        r"""Returns monkey state.
-
-        Tile index of the current position and gaze position are returned.
-
-        """
+        r"""Returns monkey state."""
         state = (self.pos, self.gaze)
         return state
 

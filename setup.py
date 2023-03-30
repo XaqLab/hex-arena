@@ -10,5 +10,5 @@ setup(
     python_requires='>=3.9',
     packages=find_packages(),
     package_data={'hexarena': ['VERSION.txt']},
-    install_requires=['numpy', 'torch', 'pyyaml'],
+    install_requires=['irc>=0.3.1'],
 )

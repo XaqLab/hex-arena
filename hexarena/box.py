@@ -61,6 +61,9 @@ class FoodBox:
         self.state_space = MultiDiscrete([2, self.num_grades])
         # observation: (*colors)
         self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
+        # param: (rate, sigma)
+        self.param_low = [0, 0]
+        self.param_high = [np.inf, np.inf]
 
         self.rng = np.random.default_rng()
 
@@ -137,12 +140,7 @@ class FoodBox:
         return reward
 
     def get_param(self) -> EnvParam:
-        r"""Returns box parameters.
-
-        Poisson rate and noise level are treated as box parameters. Food reward
-        `reward` will be treated as a fixed constant.
-
-        """
+        r"""Returns box parameters."""
         param = (self.rate, self.sigma)
         return param
 
