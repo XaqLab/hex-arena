@@ -5,4 +5,6 @@ from matplotlib.axes import Axes
 
 from collections.abc import Collection
 BoxObservation = Collection[Collection[int]]
+BoxState = tuple[int, int]
 MonkeyState = tuple[int, int]
+State = Collection[int]

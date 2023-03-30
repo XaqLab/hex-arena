@@ -44,8 +44,14 @@ class Monkey:
         self.gaze = self.rng.choice(self.arena.inners)
 
     def get_state(self) -> MonkeyState:
+        r"""Returns monkey state.
+
+        Tile index of the current position and gaze position are returned.
+
+        """
         state = (self.pos, self.gaze)
         return state
 
     def set_state(self, state: MonkeyState) -> None:
+        r"""Sets the monkey state."""
         self.pos, self.gaze = state
