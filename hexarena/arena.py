@@ -1,6 +1,8 @@
 import numpy as np
 from jarvis.config import Config
 
+from typing import Optional
+
 from . import rcParams
 from .alias import Axes
 
@@ -16,7 +18,7 @@ class Arena:
     """
 
     def __init__(self,
-        resol: int,
+        resol: Optional[int] = None,
     ):
         r"""
         Args
