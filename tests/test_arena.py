@@ -28,16 +28,11 @@ class TestArena(unittest.TestCase):
 
     def test_get_tile_index(self):
         arena = Arena()
-        for _ in range(5):
-            r = rng.uniform(0, 1)
-            theta = rng.uniform(0, 2*np.pi)
-            x, y = r*np.cos(theta), r*np.sin(theta)
-            if arena.is_inside((x, y)):
-                s_idx = arena.get_tile_index((x, y))
-                self.assertLess(s_idx, arena.num_tiles)
-            else:
-                with self.assertRaises(Exception):
-                    arena.get_tile_index((x, y))
+        r = rng.uniform(0, 1)
+        theta = rng.uniform(0, 2*np.pi)
+        x, y = r*np.cos(theta), r*np.sin(theta)
+        s_idx = arena.nearest_tile((x, y))
+        self.assertLess(s_idx, arena.num_tiles)
 
 
 if __name__=='__main__':

@@ -121,11 +121,10 @@ class Arena:
                 return False
         return True
 
-    def get_tile_index(self,
+    def nearest_tile(self,
         xy: tuple[float, float],
     ) -> int:
-        r"""Get integer index of a position."""
-        assert self.is_inside(xy), f"Position {tuple(xy)} is outside the arena."
+        r"""Get integer index of a nearest tile."""
         d = ((np.array(xy)-self.anchors)**2).sum(axis=1)**0.5
         s_idx = np.argmin(d)
         return s_idx
