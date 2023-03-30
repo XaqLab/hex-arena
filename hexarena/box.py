@@ -13,52 +13,58 @@ class FoodBox:
     def __init__(self,
         *,
         rate: Optional[float] = None,
-        step_size: Optional[float] = None,
-        sigma_c: Optional[float] = None,
-        food_reward: Optional[float] = None,
+        dt: Optional[float] = None,
+        reward: Optional[float] = None,
         num_grades: Optional[int] = None,
-        array_size: Optional[int] = None,
-        prob_resol: Optional[int] = None,
-        eps_prob: Optional[int] = None,
+        num_patches: Optional[int] = None,
+        sigma: Optional[float] = None,
+        eps: Optional[int] = None,
     ):
         r"""
         Args
         ----
         rate:
             Poisson rate of food appears, in counts per second.
-        step_size:
+        dt:
             Time step size for temporal discretization, in seconds.
-        sigma_c:
-            Parameter governing the noise of color cues, should be non-negative.
+        reward:
+            Reward value of food.
         num_grades:
-            Number of distinct colors on a color map, used for discretizing the
-            color cue.
-        array_size:
-            Characterizes spatial resolution of color cues on a screen. For
-            example, if `array_size=4`, a 4*4 grid of integers will be used to
-            represent the colored pattern on the screen.
-        prob_resol:
-            Resolution of `prob`, evenly dividing [0, 1).
-        eps_prob:
-            A small postive number for `prob` when there is no food.
+            Number of distinct colors on a color map, used for discretizing
+            `cue` and `colors`.
+        num_patches:
+            Number of colored patches on the screen, must be a square of an
+            integer to represent a square matrix. For example, if
+            `num_patches=16`, a 4*4 grid of integers will be used to represent
+            the color pattern on the screen.
+        sigma:
+            Parameter governing the noise of color cues, should be non-negative.
+        eps:
+            A small postive number for `cue` when there is no food.
 
         """
         _rcParams = Config(rcParams.get('box.Box._init_'))
         self.rate = rate or _rcParams.rate
-        self.step_size = step_size or _rcParams.step_size
-        self.sigma_c = sigma_c or _rcParams.sigma_c
-        self.food_reward = food_reward or _rcParams.food_reward
+        self.dt = dt or _rcParams.dt
+        self.reward = reward or _rcParams.reward
         self.num_grades = num_grades or _rcParams.num_grades
-        self.array_size = array_size or _rcParams.array_size
-        self.prob_resol = prob_resol or _rcParams.prob_resol
-        self.eps_prob = eps_prob or _rcParams.eps_prob
+        self.num_patches = num_patches or _rcParams.num_patches
+        self.sigma = sigma or _rcParams.sigma
+        self.eps = eps or _rcParams.eps
 
-        self.state_space = MultiDiscrete([2, self.prob_resol])
-        self.observation_space = MultiDiscrete([self.num_grades]*self.array_size**2)
+        self.mat_size = int(self.num_patches**0.5)
+        assert self.mat_size**2==self.num_patches, (
+            f"'num_patches' ({self.num_patches}) must be a squre of an integer."
+        )
+
+        # state: (food, cue)
+        self.state_space = MultiDiscrete([2, self.num_grades])
+        # observation: (*colors)
+        self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
 
         self.rng = np.random.default_rng()
 
-    def _observe(self) -> BoxObservation:
+    def render(self) -> None:
         r"""Returns color cues.
 
         Returns
@@ -67,14 +73,13 @@ class FoodBox:
             A 2D int array containing color cues.
 
         """
-        p = np.full((self.array_size, self.array_size), fill_value=self.prob)
+        p = np.full((self.mat_size, self.mat_size), fill_value=self.cue)
         z = np.arctanh(p*2-1)
-        z += self.rng.normal(0, self.sigma_c, (self.array_size, self.array_size))
+        z += self.rng.normal(0, self.sigma, z.shape)
         p = (np.tanh(z)+1)/2
-        colors = np.floor(p*self.num_grades).astype(int)
-        return colors
+        self.colors = np.floor(p*self.num_grades).astype(int)
 
-    def reset(self, seed: Optional[int] = None) -> tuple[BoxObservation, dict]:
+    def reset(self, seed: Optional[int] = None) -> None:
         r"""Resets box state.
 
         Args
@@ -93,12 +98,10 @@ class FoodBox:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.food = False
-        self.prob = self.eps_prob
-        observation = self._observe()
-        info = {'food': self.food, 'prob': self.prob}
-        return observation, info
+        self.cue = self.eps
+        self.render()
 
-    def step(self, action: int) -> tuple[BoxObservation, float, bool, bool, dict]:
+    def step(self, action: int) -> float:
         r"""Updates box state.
 
         Args
@@ -121,15 +124,14 @@ class FoodBox:
         assert action==0 or action==1
         reward = 0.
         if action==0: # no push
-            p = 1-np.exp(-self.rate*self.step_size)
+            p = 1-np.exp(-self.rate*self.dt)
             if self.rng.random()<p:
                 self.food = True
-            self.prob = 1-(1-self.prob)*(1-p)
+            self.cue = 1-(1-self.cue)*(1-p)
         else: # push
             if self.food:
-                reward += self.food_reward
+                reward += self.reward
             self.food = False
-            self.prob = self.eps_prob
-        observation = self._observe()
-        info = {'food': self.food, 'prob': self.prob}
-        return observation, reward, False, False, info
+            self.cue = self.eps
+        self.render()
+        return reward

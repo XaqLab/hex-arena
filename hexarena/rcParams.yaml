@@ -6,11 +6,10 @@ arena:
 box:
   Box:
     _init_:
-      rate: 0.05
-      step_size: 1.0
-      sigma_c: 0.2
-      food_reward: 1.
+      rate: 0.05 # counts/sec
+      dt: 1.0 # secs
+      reward: 1.
       num_grades: 8
-      array_size: 4
-      prob_resol: 10
-      eps_prob: 1.e-3
+      num_patches: 16
+      sigma: 0.2
+      eps: 1.e-3
