@@ -61,6 +61,7 @@ class TestMonkey(unittest.TestCase):
             look = rng.choice(monkey.arena.num_tiles)
             reward = monkey.step(move, look)
             self.assertLessEqual(reward, 0)
+            self.assertEqual(monkey.gaze, look)
         reward = monkey.step(0, monkey.gaze)
         self.assertEqual(reward, 0)
 

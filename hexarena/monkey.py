@@ -97,7 +97,7 @@ class Monkey:
         if end==start:
             theta = None
         else:
-            dx, dy = self.arena.anchors[end]-self.arena.anchors[start]
+            dx, dy = np.array(self.arena.anchors[end])-np.array(self.arena.anchors[start])
             theta = np.arctan2(dy, dx)
         return theta
 
@@ -131,20 +131,20 @@ class Monkey:
         reward = 0.
         phi = self._direction(self.gaze, self.pos) # face direction
         if move==0:
-            dxy = np.array([0, 0])
+            dxy = np.array([0., 0.])
         else:
             theta = move/6*(2*np.pi)
             dxy = np.array([np.cos(theta), np.sin(theta)])/self.arena.resol
         d = self.rng.gamma(self.k_gamma, self.velocity/self.k_gamma)
-        xy = self.arena.anchors[self.pos]
-        while d>0.5 and self.arena.is_inside(xy*(1+eps)):
+        xy = np.array(self.arena.anchors[self.pos])
+        while d>0.5 and self.arena.is_inside(xy*(1-eps)):
             xy += dxy
             d -= 1
         pos = self.arena.nearest_tile(xy) # new position
         theta = self._direction(pos, self.pos) # moving direction
         if not(phi is None or theta is None):
             reward -= self.turn_price*self._delta_deg(theta, phi)
-        dxy = self.arena.anchors[pos]-self.arena.anchors[self.pos]
+        dxy = np.array(self.arena.anchors[pos])-np.array(self.arena.anchors[self.pos])
         d = (dxy**2).sum()**0.5 # moving distance
         reward -= d*self.move_price
         self.pos = pos

@@ -41,7 +41,7 @@ class Arena:
         for i in range(self.resol+1):
             if i==0:
                 self.center = 0
-                anchors.append([0, 0])
+                anchors.append((0., 0.))
                 continue
             r = i/self.resol
             for j in range(6):
@@ -60,23 +60,24 @@ class Arena:
                         self.inners.append(t_idx)
                     x = x0+k/self.resol*np.cos(theta)
                     y = y0+k/self.resol*np.sin(theta)
-                    anchors.append([x, y])
-        self.anchors = np.array(anchors)
+                    anchors.append((x, y))
+        self.anchors = tuple(anchors)
 
     def plot_map(self,
         ax: Axes,
     ) -> None:
+        _anchors = np.array(self.anchors)
         _idxs = self.corners+[self.corners[0]]
         ax.plot(
-            self.anchors[_idxs, 0], self.anchors[_idxs, 1],
+            _anchors[_idxs, 0], _anchors[_idxs, 1],
             color='darkgray', linewidth=3, zorder=0
         )
         ax.scatter(
-            self.anchors[:, 0], self.anchors[:, 1],
+            _anchors[:, 0], _anchors[:, 1],
             s=40, marker='X', color='yellow',
         )
         ax.scatter(
-            self.anchors[self.boxes, 0], self.anchors[self.boxes, 1],
+            _anchors[self.boxes, 0], _anchors[self.boxes, 1],
             s=120, marker='o', facecolors='none', edgecolors='red', linewidths=2,
         )
 
@@ -108,10 +109,10 @@ class Arena:
         ax.set_axis_off()
 
     def is_inside(self,
-        pos: tuple[float, float],
+        xy: tuple[float, float],
     ) -> bool:
         r"""Returns if a position is inside the arena."""
-        x, y = pos
+        x, y = xy
         for i in range(6):
             x0, y0 = self.anchors[self.corners[i]]
             x1, y1 = self.anchors[self.corners[(i+1)%6]]
@@ -125,6 +126,6 @@ class Arena:
         xy: tuple[float, float],
     ) -> int:
         r"""Get integer index of a nearest tile."""
-        d = ((np.array(xy)-self.anchors)**2).sum(axis=1)**0.5
+        d = ((np.array(xy)-np.array(self.anchors))**2).sum(axis=1)**0.5
         s_idx = np.argmin(d)
         return s_idx
