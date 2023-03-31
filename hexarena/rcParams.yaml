@@ -6,8 +6,8 @@ arena:
 box:
   Box:
     _init_:
-      rate: 0.05 # counts/sec
-      dt: 1.0 # secs
+      rate: 0.05 # count/sec
+      dt: 1.0 # sec
       reward: 10.
       num_grades: 8
       num_patches: 16
@@ -18,5 +18,8 @@ monkey:
   Monkey:
     _init_:
       push_cost: 1.
+      turn_price: 0.001 # deg^{-1}
       move_price: 0.1
       look_price: 0. # deg^{-1}
+      velocity: 1.5 # tile/step
+      k_gamma: 10 # shape parameter for gamma distribution

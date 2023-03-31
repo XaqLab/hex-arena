@@ -40,14 +40,26 @@ class TestMonkey(unittest.TestCase):
 
     def test_param(self):
         monkey = Monkey()
-        push_cost, move_price, look_price = monkey.get_param()
-        for x in [push_cost, move_price, look_price]:
+        push_cost, turn_price, move_price, look_price = monkey.get_param()
+        for x in [push_cost, turn_price, move_price, look_price]:
             self.assertGreaterEqual(x, 0)
-        push_cost, move_price, look_price = rng.uniform(0, 1, 3)
-        monkey.set_param((push_cost, move_price, look_price))
+        push_cost, turn_price, move_price, look_price = rng.uniform(0, 1, 4)
+        monkey.set_param((push_cost, turn_price, move_price, look_price))
         self.assertEqual(monkey.push_cost, push_cost)
+        self.assertEqual(monkey.turn_price, turn_price)
         self.assertEqual(monkey.move_price, move_price)
         self.assertEqual(monkey.look_price, look_price)
+
+    def test_step(self):
+        monkey = Monkey()
+        monkey.reset()
+        for _ in range(10):
+            move = rng.choice(monkey._num_moves)
+            look = rng.choice(monkey.arena.num_tiles)
+            reward = monkey.step(move, look)
+            self.assertLessEqual(reward, 0)
+        reward = monkey.step(0, monkey.gaze)
+        self.assertEqual(reward, 0)
 
 
 if __name__=='__main__':
