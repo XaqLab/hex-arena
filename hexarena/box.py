@@ -98,8 +98,8 @@ class FoodBox:
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.food = False
-        self.cue = self.eps
+        self.food = True
+        self.cue = 1-self.eps
         self.render()
 
     def step(self, action: int) -> float:

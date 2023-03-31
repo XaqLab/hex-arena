@@ -152,4 +152,6 @@ class Monkey:
         phi = self._direction(self.gaze, self.pos) # new face direction
         if not(phi is None or theta is None):
             reward -= self.look_price*self._delta_deg(theta, phi)
+        assert self.pos%1==0, f"'pos' {self.pos} is not int."
+        assert self.gaze%1==0, f"'gaze' {self.gaze} is not int."
         return reward
