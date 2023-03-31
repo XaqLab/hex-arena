@@ -76,6 +76,9 @@ class TestFoodBox(unittest.TestCase):
         self.assertEqual(box.rate, rate)
         self.assertEqual(box.sigma, sigma)
 
+        self.assertEqual(len(box.param_low), len(box.get_param()))
+        self.assertEqual(len(box.param_high), len(box.get_param()))
+
 
 if __name__=='__main__':
     unittest.main()
