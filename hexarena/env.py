@@ -5,6 +5,7 @@ from jarvis.config import Config
 
 from typing import Optional
 
+from . import rcParams
 from .arena import Arena
 from .box import FoodBox
 from .monkey import Monkey
@@ -15,18 +16,28 @@ class ForagingEnv(Env):
 
     def __init__(self,
         arena: Optional[dict] = None,
-        box: Optional[dict] = None,
+        boxes: Optional[list[Optional[dict]]] = None,
         monkey: Optional[dict] = None,
+        dt: Optional[float] = None,
     ):
+        _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
+        dt = dt or _rcParams.dt
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
         self.arena: Arena = arena.instantiate()
-        box = Config(box)
-        box._target_ = 'hexarena.box.FoodBox'
         num_boxes = 3 # fixed three boxes
-        self.boxes: list[FoodBox] = [box.instantiate() for _ in range(num_boxes)]
+        if boxes is None:
+            boxes = [None]*num_boxes
+        else:
+            assert len(boxes)==num_boxes
+        self.boxes: list[FoodBox] = []
         for i in range(num_boxes):
-            self.boxes[i].pos = self.arena.boxes[i]
+            box = Config(boxes[i])
+            box._target_ = 'hexarena.box.FoodBox'
+            box.dt = dt
+            box: FoodBox = box.instantiate()
+            box.pos = self.arena.boxes[i]
+            self.boxes.append(box)
         monkey = Config(monkey)
         monkey._target_ = 'hexarena.monkey.Monkey'
         self.monkey: Monkey = monkey.instantiate(arena=self.arena)

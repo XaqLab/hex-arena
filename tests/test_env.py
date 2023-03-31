@@ -14,6 +14,16 @@ class TestForagingEnv(unittest.TestCase):
         self.assertIsInstance(env.state_space, MultiDiscrete)
         self.assertIsInstance(env.observation_space, MultiDiscrete)
 
+        env = ForagingEnv(
+            arena={'resol': 4},
+            boxes=[
+                {'rate': 1/15, 'num_grades': 6, 'num_patches': 9, 'sigma': 0.01},
+                {'rate': 1/21}, {'rate': 1/35},
+            ],
+            monkey={'push_cost': 0., 'turn_price': 0.02},
+            dt=2.,
+        )
+
     def test_reset(self):
         env = ForagingEnv()
         observation, info = env.reset()

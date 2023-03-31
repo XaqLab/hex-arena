@@ -23,3 +23,8 @@ monkey:
       look_price: 0. # deg^{-1}
       velocity: 1.5 # tile/step
       k_gamma: 10 # shape parameter for gamma distribution
+
+env:
+  ForagingEnv:
+    _init_:
+      dt: 1.0 # sec
