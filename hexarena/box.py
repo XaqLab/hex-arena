@@ -44,13 +44,13 @@ class FoodBox:
 
         """
         _rcParams = Config(rcParams.get('box.Box._init_'))
-        self.rate = rate or _rcParams.rate
-        self.dt = dt or _rcParams.dt
-        self.reward = reward or _rcParams.reward
-        self.num_grades = num_grades or _rcParams.num_grades
-        self.num_patches = num_patches or _rcParams.num_patches
-        self.sigma = sigma or _rcParams.sigma
-        self.eps = eps or _rcParams.eps
+        self.rate = _rcParams.rate if rate is None else rate
+        self.dt = _rcParams.dt if dt is None else dt
+        self.reward = _rcParams.reward if reward is None else reward
+        self.num_grades = _rcParams.num_grades if num_grades is None else num_grades
+        self.num_patches = _rcParams.num_patches if num_patches is None else num_patches
+        self.sigma = _rcParams.sigma if sigma is None else sigma
+        self.eps = _rcParams.eps if eps is None else eps
 
         self.mat_size = int(self.num_patches**0.5)
         assert self.mat_size**2==self.num_patches, (

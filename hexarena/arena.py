@@ -29,7 +29,7 @@ class Arena:
 
         """
         _rcParams = Config(rcParams.get('arena.Arena._init_'))
-        self.resol = resol or _rcParams.resol
+        self.resol = _rcParams.resol if resol is None else resol
         assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )

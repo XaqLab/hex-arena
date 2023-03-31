@@ -33,24 +33,24 @@ class Monkey:
             arena._target_ = 'hexarena.arena.Arena'
             arena: Arena = arena.instantiate()
         self.arena = arena
-        self.push_cost = push_cost or _rcParams.push_cost
+        self.push_cost = _rcParams.push_cost if push_cost is None else push_cost
         assert self.push_cost>=0, (
             f"Push cost `push_cost` ({self.push_cost}) must be non-negative."
         )
-        self.turn_price = turn_price or _rcParams.turn_price
+        self.turn_price = _rcParams.turn_price if turn_price is None else turn_price
         assert self.turn_price>=0, (
             f"Turn cost per degree `turn_price` ({self.turn_price}) must be non-negative."
         )
-        self.move_price = move_price or _rcParams.move_price
+        self.move_price = _rcParams.move_price if move_price is None else move_price
         assert self.move_price>=0, (
             f"Move cost per distance `move_price` ({self.move_price}) must be non-negative."
         )
-        self.look_price = look_price or _rcParams.look_price
+        self.look_price = _rcParams.look_price if look_price is None else look_price
         assert self.look_price>=0, (
             f"Look cost per degree `look_price` ({self.look_price}) must be non-negative."
         )
-        self.velocity = velocity or _rcParams.velocity
-        self.k_gamma = k_gamma or _rcParams.k_gamma
+        self.velocity = _rcParams.velocity if velocity is None else velocity
+        self.k_gamma = _rcParams.k_gamma if k_gamma is None else k_gamma
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)

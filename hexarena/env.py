@@ -21,7 +21,7 @@ class ForagingEnv(Env):
         dt: Optional[float] = None,
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
-        dt = dt or _rcParams.dt
+        dt = _rcParams.dt if dt is None else dt
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
         self.arena: Arena = arena.instantiate()
