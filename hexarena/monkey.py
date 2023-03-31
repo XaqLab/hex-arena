@@ -54,9 +54,9 @@ class Monkey:
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
-        # param: (push_cost, move_price, look_price)
-        self.param_low = [0, 0, 0]
-        self.param_high = [np.inf, np.inf, np.inf]
+        # param: (push_cost, turn_price, move_price, look_price)
+        self.param_low = [0, 0, 0, 0]
+        self.param_high = [np.inf, np.inf, np.inf, np.inf]
         # action: (move, look)
         self._num_moves = 7 # stay still and six hexagonal directions
         self._push = self._num_moves*self.arena.num_tiles # action index for push

@@ -50,6 +50,9 @@ class TestMonkey(unittest.TestCase):
         self.assertEqual(monkey.move_price, move_price)
         self.assertEqual(monkey.look_price, look_price)
 
+        self.assertEqual(len(monkey.param_low), len(monkey.get_param()))
+        self.assertEqual(len(monkey.param_high), len(monkey.get_param()))
+
     def test_step(self):
         monkey = Monkey()
         monkey.reset()
