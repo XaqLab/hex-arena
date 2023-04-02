@@ -170,5 +170,5 @@ class ForagingEnv(Env):
             return pa, sc, ti
 
         ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
-        ani.save(aname)
+        ani.save(aname, writer='pillow')
         return fig

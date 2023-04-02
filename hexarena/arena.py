@@ -54,7 +54,7 @@ class Arena:
                         self.outers.append(t_idx)
                         if k==0:
                             self.corners.append(t_idx)
-                        elif j%2==1 and k==self.resol//2:
+                        elif j%2==0 and k==self.resol//2:
                             self.boxes.append(t_idx)
                     else:
                         self.inners.append(t_idx)
