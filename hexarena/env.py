@@ -2,14 +2,18 @@ import numpy as np
 from gym import Env
 from gym.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.animation import FuncAnimation
 
 from typing import Optional
+from irc.buffer import Episode
 
 from . import rcParams
 from .arena import Arena
 from .box import FoodBox
 from .monkey import Monkey
-from .alias import EnvParam, Observation, State
+from .alias import EnvParam, Observation, State, Axes
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -137,3 +141,34 @@ class ForagingEnv(Env):
             'colors': [box.colors for box in self.boxes],
         }
         return info
+
+    def play_episode(self,
+        episode: Episode,
+        aname: str = 'foraging-trial.gif',
+        figsize: tuple[float, float] = None,
+    ):
+        if figsize is None:
+            figsize = (4, 4)
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
+        self.arena.plot_map(ax)
+
+        pa = ax.add_patch(Polygon(np.full((1, 2), fill_value=np.nan), edgecolor='none', facecolor='yellow', alpha=0.2))
+        sc = ax.scatter(np.nan, np.nan, s=100, marker='o', edgecolor='none', facecolor='blue')
+        ti = ax.set_title('')
+
+        _xy = np.stack([
+            np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
+            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
+        ])
+        def update(t):
+            pos = episode.states[t, 0]
+            pa.set_xy(_xy+self.arena.anchors[pos])
+            gaze = episode.states[t, 1]
+            sc.set_offsets(self.arena.anchors[gaze])
+            ti.set_text(r'$t$='+'{:d}'.format(t))
+            return pa, sc, ti
+
+        ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
+        ani.save(aname)
+        return fig
