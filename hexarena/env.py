@@ -14,7 +14,7 @@ from . import rcParams
 from .arena import Arena
 from .box import FoodBox
 from .monkey import Monkey
-from .alias import EnvParam, Observation, State, Axes
+from .alias import EnvParam, Observation, State
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -241,7 +241,7 @@ class ForagingEnv(Env):
             plt.colorbar(
                 mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
                 ax=ax, fraction=0.1, shrink=0.8, pad=0.1,
-                orientation='vertical', label='Probability',
+                orientation='horizontal', label='Probability',
             )
 
             ax.set_title(title)
