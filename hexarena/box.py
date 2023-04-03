@@ -31,7 +31,7 @@ class FoodBox:
             Reward value of food.
         num_grades:
             Number of distinct colors on a color map, used for discretizing
-            `cue` and `colors`.
+            `cue` and `colors`. TODO distinguish between `cue` and `colors`.
         num_patches:
             Number of colored patches on the screen, must be a square of an
             integer to represent a square matrix. For example, if

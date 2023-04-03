@@ -196,7 +196,7 @@ class ForagingEnv(Env):
             return *h_boxes, h_pos, h_gaze, ti
 
         ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
-        ani.save(aname, writer='pillow')
+        ani.save(aname)
         return fig, ani
 
     def plot_occupancy(self,

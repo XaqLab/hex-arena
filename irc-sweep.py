@@ -12,5 +12,6 @@ if __name__=='__main__':
     manager = AgentManager(
         store_dir=cli_args.pop('store_dir'),
         defaults=cli_args.pop('defaults'),
+        disp_interval=1,
     )
     manager.train_agents_on_grid(**cli_args)
