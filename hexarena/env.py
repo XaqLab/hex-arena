@@ -22,9 +22,11 @@ class ForagingEnv(Env):
         arena: Optional[dict] = None,
         boxes: Optional[list[Optional[dict]]] = None,
         monkey: Optional[dict] = None,
+        time_cost: Optional[float] = None,
         dt: Optional[float] = None,
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
+        self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
         dt = _rcParams.dt if dt is None else dt
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
@@ -108,13 +110,14 @@ class ForagingEnv(Env):
         return observation, info
 
     def step(self, action: int) -> tuple[Observation, float, bool, bool, dict]:
-        reward, terminated, truncated = 0., False, False
+        reward, terminated, truncated = -self.time_cost, False, False
         if action<self._push:
             move = action%self._num_moves
             look = action//self._num_moves
             reward += self.monkey.step(move, look)
         for box in self.boxes:
-            if action==self._push and self.monkey.pos==box.pos and self.monkey.gaze==box.pos:
+            if action==self._push and self.monkey.pos==box.pos:
+                self.monkey.gaze = self.monkey.pos
                 reward += box.step(1)
                 reward -= self.monkey.push_cost
             else:
@@ -148,13 +151,26 @@ class ForagingEnv(Env):
         figsize: tuple[float, float] = None,
     ):
         if figsize is None:
-            figsize = (4, 4)
+            figsize = (4.5, 4)
         fig = plt.figure(figsize=figsize)
-        ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
+        ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
         self.arena.plot_map(ax)
 
-        pa = ax.add_patch(Polygon(np.full((1, 2), fill_value=np.nan), edgecolor='none', facecolor='yellow', alpha=0.2))
-        sc = ax.scatter(np.nan, np.nan, s=100, marker='o', edgecolor='none', facecolor='blue')
+        h_boxes = []
+        for box in self.boxes:
+            colors = np.zeros(box.colors.shape, dtype=int)
+            _x, _y = np.array(self.arena.anchors[box.pos])*1.5
+            _s = 0.2
+            h_box = ax.imshow(
+                colors, extent=[_x-_s, _x+_s, _y-_s, _y+_s],
+                vmin=-1, vmax=box.num_grades, cmap='RdYlBu_r',
+                zorder=2,
+            )
+            h_boxes.append(h_box)
+        ax.set_xlim([-1.5, 1.5])
+        ax.set_ylim([-1.5, 1.2])
+        h_pos = ax.add_patch(Polygon(np.full((1, 2), fill_value=np.nan), edgecolor='none', facecolor='yellow', alpha=0.2))
+        h_gaze = ax.scatter(np.nan, np.nan, s=100, marker='o', edgecolor='none', facecolor='blue')
         ti = ax.set_title('')
 
         _xy = np.stack([
@@ -162,13 +178,22 @@ class ForagingEnv(Env):
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
         ])
         def update(t):
-            pos = episode.states[t, 0]
-            pa.set_xy(_xy+self.arena.anchors[pos])
-            gaze = episode.states[t, 1]
-            sc.set_offsets(self.arena.anchors[gaze])
+            for i, h_box in enumerate(h_boxes):
+                h_box.set_data(episode.infos[t]['colors'][i])
+            pos = episode.infos[t]['pos']
+            h_pos.set_xy(_xy+self.arena.anchors[pos])
+            if t>0 and pos in self.arena.boxes and episode.actions[t-1]==self._push:
+                if episode.rewards[t-1]>0:
+                    h_pos.set_facecolor('red')
+                else:
+                    h_pos.set_facecolor('blue')
+            else:
+                h_pos.set_facecolor('yellow')
+            gaze = episode.infos[t]['gaze']
+            h_gaze.set_offsets(self.arena.anchors[gaze])
             ti.set_text(r'$t$='+'{:d}'.format(t))
-            return pa, sc, ti
+            return *h_boxes, h_pos, h_gaze, ti
 
         ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
         ani.save(aname, writer='pillow')
-        return fig
+        return fig, ani
