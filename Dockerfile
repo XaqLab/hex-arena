@@ -1,4 +1,5 @@
 FROM zheli21/pytorch:1.13.1-cp310-cuda117-2204 AS base
+RUN apt-get -y update && apt-get -y install ffmpeg
 RUN python -m pip install -U pip stable-baselines3
 
 FROM base as git-repos

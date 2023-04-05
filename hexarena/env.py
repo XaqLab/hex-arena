@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from gym import Env
 from gym.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
@@ -9,6 +10,7 @@ from matplotlib.animation import FuncAnimation
 
 from typing import Optional
 from irc.buffer import Episode
+from irc.distribution import BaseDistribution
 
 from . import rcParams
 from .arena import Arena
@@ -28,7 +30,7 @@ class ForagingEnv(Env):
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
-        dt = _rcParams.dt if dt is None else dt
+        self.dt = _rcParams.dt if dt is None else dt
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
         self.arena: Arena = arena.instantiate()
@@ -41,7 +43,7 @@ class ForagingEnv(Env):
         for i in range(num_boxes):
             box = Config(boxes[i])
             box._target_ = 'hexarena.box.FoodBox'
-            box.dt = dt
+            box.dt = self.dt
             box: FoodBox = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
@@ -150,6 +152,7 @@ class ForagingEnv(Env):
         episode: Episode,
         aname: str = 'foraging-trial.gif',
         figsize: tuple[float, float] = None,
+        use_sec: bool = False,
     ):
         if figsize is None:
             figsize = (4.5, 4)
@@ -192,8 +195,75 @@ class ForagingEnv(Env):
                 h_pos.set_facecolor('yellow')
             gaze = episode.infos[t]['gaze']
             h_gaze.set_offsets(self.arena.anchors[gaze])
-            ti.set_text(r'$t$='+'{:d}'.format(t))
+            ti.set_text(r'$t$='+'{:d}'.format(t*self.dt if use_sec else t))
             return *h_boxes, h_pos, h_gaze, ti
+
+        ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
+        ani.save(aname)
+        return fig, ani
+
+    def play_box_beliefs(self,
+        episode: Episode,
+        p_s: BaseDistribution,
+        aname: str = 'cue-belief-trace.gif',
+        figsize: tuple[float, float] = None,
+        use_sec: bool = False,
+    ):
+        assert len(self.boxes)==3, "Only implemented for three boxes."
+        if figsize is None:
+            figsize = (6, 4)
+        fig = plt.figure(figsize=figsize)
+        colors = ['violet', 'lime', 'tomato']
+
+        nvec = self.state_space.nvec[-6:]
+        box_states = np.stack(np.unravel_index(np.arange(np.prod(nvec)), nvec)).T
+
+        beliefs = np.zeros((episode.num_steps+1, 3)) # probability of food in each box
+        for t in range(episode.num_steps+1):
+            belief = episode.beliefs[t]
+            states = np.tile(episode.states[t], (np.prod(nvec), 1))
+            states[:, 2:] = box_states
+            p_s.set_param_vec(belief)
+            with torch.no_grad():
+                _probs = p_s.loglikelihoods(
+                    torch.tensor(states, dtype=torch.long),
+                ).exp().numpy()
+            for i in range(3):
+                beliefs[t, i] = _probs[box_states[:, 2*i]==1].sum()
+
+        ax = fig.add_axes([0.15, 0.6, 0.8, 0.3])
+        c_lines = []
+        for i in range(3):
+            h, = ax.plot(np.nan, np.nan, color=colors[i])
+            c_lines.append(h)
+        ax.set_xlim(np.array([-0.05, 1.05])*episode.num_steps)
+        ax.set_xticklabels([])
+        ax.set_ylim([0, 1.05])
+        ax.set_ylabel('Cue')
+
+        ax = fig.add_axes([0.15, 0.2, 0.8, 0.3])
+        b_lines = []
+        for i in range(3):
+            h, = ax.plot(np.nan, np.nan, color=colors[i])
+            b_lines.append(h)
+        ax.legend(['Box A', 'Box B', 'Box C'], fontsize='x-small', loc='lower right')
+        ax.set_xlim(np.array([-0.05, 1.05])*episode.num_steps)
+        ax.set_xlabel('Time (sec)' if use_sec else '$t$')
+        ax.set_ylim([0, 1.05])
+        ax.set_ylabel('Belief')
+
+        def update(t):
+            for i, h in enumerate(c_lines):
+                h.set_data(np.array([
+                    np.arange(t+1),
+                    np.array([episode.infos[j]['cues'][i] for j in range(t+1)]),
+                ]))
+            for i, h in enumerate(b_lines):
+                h.set_data(np.array([
+                    np.arange(t+1),
+                    beliefs[:t+1, i],
+                ]))
+            return *c_lines, *b_lines
 
         ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
         ani.save(aname)
