@@ -12,6 +12,18 @@ if __name__=='__main__':
             {'num_grades': 8, 'num_patches': 16},
         ],
         'model.p_o.idxs': None,
+        'train.update_net': {
+            'init.l2_reg': 0.01,
+            'tune.l2_reg': 0.01,
+        },
+        'calibrate': {
+            'init.l2_reg': 0.01,
+            'init.num_samples': 1000,
+            'init.num_epochs': 10,
+            'tune.l2_reg': 0.01,
+            'tune.num_samples': 400,
+            'tune.num_epochs': 10,
+        },
     }
     config = manager.get_config(config)
 
