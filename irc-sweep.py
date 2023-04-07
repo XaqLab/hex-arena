@@ -13,6 +13,6 @@ if __name__=='__main__':
     manager = AgentManager(
         store_dir=cli_args.pop('store_dir'),
         defaults=cli_args.pop('defaults'),
-        disp_interval=1,
+        save_interval=3,
     )
     manager.train_agents_from_spec(**cli_args)
