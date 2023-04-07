@@ -154,4 +154,4 @@ class FoodBox:
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
         self.food = bool(state[0])
-        self.cue = (float(state[1])+0.5)/self.num_grades
+        self.cue = (float(state[1])+self.rng.random())/self.num_grades
