@@ -4,7 +4,8 @@ from irc.manager import AgentManager
 cli_args = Config({
     'store_dir': 'store',
     'defaults': 'irc-defaults.yaml',
-    'param_grid': 'irc-grid.yaml',
+    'spec': 'sweep-spec.yaml',
+    'count': 10,
 })
 
 if __name__=='__main__':
@@ -14,4 +15,4 @@ if __name__=='__main__':
         defaults=cli_args.pop('defaults'),
         disp_interval=1,
     )
-    manager.train_agents_on_grid(**cli_args)
+    manager.train_agents_from_spec(**cli_args)
