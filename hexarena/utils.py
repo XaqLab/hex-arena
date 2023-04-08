@@ -82,18 +82,19 @@ def discretize_monkey_data(block_data, env: ForagingEnv, arena_radius=1860.5):
     push = np.array(push, dtype=bool)
     success = np.array(success, dtype=bool)
 
-    cues = []
+    colors = []
+    _color_size = int(env.boxes[0].num_patches**0.5)
     for i in range(num_steps):
         _cues = block_data['cues'][(t>=i*env.dt)&(t<(i+1)*env.dt), :].mean(axis=0)
         _cues = np.floor(_cues*np.array([box.num_grades for box in env.boxes]))
-        cues.append(_cues)
-    cues = np.array(cues, dtype=int)
+        colors.append(np.tile(_cues[:, None, None], (1, _color_size, _color_size)))
+    colors = np.array(colors, dtype=int)
 
     env_data = {
         'num_steps': num_steps-1,
         'pos': pos, 'gaze': gaze,
         'push': push, 'success': success,
-        'cues': cues,
+        'colors': colors,
     }
     return env_data
 
@@ -118,10 +119,10 @@ def extract_observation_action(env_data, env):
         j = 2
         for box_idx in range(3):
             if env_data['gaze'][i]==env.arena.boxes[box_idx]:
-                cue = env_data['cues'][i, box_idx]
+                colors = env_data['colors'][i, box_idx].reshape(-1)
             else:
-                cue = env.boxes[box_idx].num_grades
-            observations[i, j:(j+env.boxes[box_idx].num_patches)] = cue
+                colors = env.boxes[box_idx].num_grades
+            observations[i, j:(j+env.boxes[box_idx].num_patches)] = colors
             j += env.boxes[box_idx].num_patches
 
     actions = np.empty((num_steps,), dtype=int)
