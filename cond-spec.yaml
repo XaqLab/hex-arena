@@ -1,0 +1,12 @@
+env_param:
+  - null    # push_cost
+  - [0.001]   # turn_price
+  - [0.1]     # move_price
+  - null    # look_price
+  - ['Range', {'low': 0.02, 'high': 0.06}]  # box 1 rate
+  - null    # box 1 sigma
+  - ['Range', {'low': 0.02, 'high': 0.06}]  # box 2 rate
+  - null    # box 2 sigma
+  - ['Range', {'low': 0.02, 'high': 0.06}]  # box 3 rate
+  - null    # box 3 sigma
+  
