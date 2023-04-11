@@ -7,9 +7,9 @@ if __name__=='__main__':
         'env_param': [1, 0.001, 0.1, 0, 0.0286, 0.2, 0.0476, 0.2, 0.0667, 0.2],
         'env.arena.resol': 4,
         'env.boxes': [
-            {'num_grades': 8, 'num_patches': 16},
-            {'num_grades': 8, 'num_patches': 16},
-            {'num_grades': 8, 'num_patches': 16},
+            {'num_grades': 8, 'num_patches': 9},
+            {'num_grades': 8, 'num_patches': 9},
+            {'num_grades': 8, 'num_patches': 9},
         ],
         'model.p_o.idxs': None,
         'train.update_net': {
@@ -23,6 +23,9 @@ if __name__=='__main__':
             'tune.l2_reg': 0.01,
             'tune.num_samples': 400,
             'tune.num_epochs': 10,
+        },
+        'learn': {
+            'rl_steps': 655360,
         },
     }
     config = manager.get_config(config)
