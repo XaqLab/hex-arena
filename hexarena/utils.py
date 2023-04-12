@@ -5,7 +5,7 @@ from .env import ForagingEnv
 
 def compute_cue(t, push_t, rate):
     r"""Computes cumulative probabilities given push times and Poisson rate."""
-    push_t = np.concatenate([[-np.inf], push_t, [np.inf]])
+    push_t = np.concatenate([[0], push_t, [np.inf]])
     cue = np.empty(t.shape)
 
     for i in range(1, len(push_t)):

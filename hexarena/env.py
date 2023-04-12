@@ -9,6 +9,7 @@ from matplotlib.patches import Polygon
 from matplotlib.animation import FuncAnimation
 
 from typing import Optional
+from collections.abc import Iterable
 from irc.buffer import Episode
 from irc.distribution import BaseDistribution
 
@@ -149,13 +150,12 @@ class ForagingEnv(Env):
         return info
 
     def play_episode(self,
-        # episode: Episode,
         pos, gaze, colors, push, success,
         num_steps: Optional[int] = None,
-        aname: str = 'foraging-trial.gif',
         figsize: tuple[float, float] = None,
         use_sec: bool = False,
     ):
+        assert len(self.boxes)==3, "Only implemented for three boxes."
         if num_steps is None:
             num_steps = len(push)
         else:
@@ -178,6 +178,11 @@ class ForagingEnv(Env):
                 zorder=2,
             )
             h_boxes.append(h_box)
+        h_counts = [
+            ax.text(9/8, 0.93, '0/0', ha='center'),
+            ax.text(-9/8, 0.93, '0/0', ha='center'),
+            ax.text(0, -1.69, '0/0', ha='center'),
+        ]
         ax.set_xlim([-1.5, 1.5])
         ax.set_ylim([-1.5, 1.2])
         h_pos = ax.add_patch(Polygon(
@@ -185,30 +190,38 @@ class ForagingEnv(Env):
             edgecolor='none', facecolor='yellow', alpha=0.2,
         ))
         h_gaze = ax.scatter(np.nan, np.nan, s=100, marker='o', edgecolor='none', facecolor='blue')
-        ti = ax.set_title('')
+        h_title = ax.set_title('')
 
         _xy = np.stack([
             np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
         ])
+        counts = [(0, 0)]*3
         def update(t):
             for i, h_box in enumerate(h_boxes):
                 h_box.set_data(colors[t, i])
             _pos = pos[t]
             h_pos.set_xy(_xy+self.arena.anchors[_pos])
             if t>0 and _pos in self.arena.boxes and push[t-1]:
-                if success[t-1]>0:
-                    h_pos.set_facecolor('red')
+                b_idx = self.arena.boxes.index(_pos)
+                _success, _total = counts[b_idx]
+                if success[t-1]:
+                    _success += 1
+                _total += 1
+                counts[b_idx] = (_success, _total)
+                h_counts[b_idx].set_text('{}/{}'.format(*counts[b_idx]))
+
+                if success[t-1]:
+                    h_pos.set_facecolor('darkred')
                 else:
-                    h_pos.set_facecolor('blue')
+                    h_pos.set_facecolor('darkblue')
             else:
                 h_pos.set_facecolor('yellow')
             h_gaze.set_offsets(self.arena.anchors[gaze[t]])
-            ti.set_text(r'$t$='+'{:d}'.format(t*self.dt if use_sec else t))
-            return *h_boxes, h_pos, h_gaze, ti
+            h_title.set_text(r'$t$='+'{}'.format('{:g} sec'.format(t*self.dt) if use_sec else t))
+            return *h_boxes, h_pos, h_gaze, *h_counts, h_title
 
         ani = FuncAnimation(fig, update, frames=range(num_steps), blit=True)
-        ani.save(aname)
         return fig, ani
 
     def play_box_beliefs(self,
@@ -279,15 +292,9 @@ class ForagingEnv(Env):
         return fig, ani
 
     def plot_occupancy(self,
-        episodes: list[Episode],
+        pos: Iterable[int], gaze: Iterable[int],
         figsize: tuple[float, float] = None,
     ):
-        pos, gaze = [], []
-        for episode in episodes:
-            for info in episode.infos:
-                pos.append(info['pos'])
-                gaze.append(info['gaze'])
-
         _xy = np.stack([
             np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
@@ -325,3 +332,49 @@ class ForagingEnv(Env):
 
             ax.set_title(title)
         return fig_p, fig_g
+
+    def play_traces(self,
+        vals, num_steps = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        figsize: tuple[float, float] = None,
+        show_legend: bool = True,
+        use_sec: bool = False,
+    ):
+        assert len(self.boxes)==3, "Only implemented for three boxes."
+        if figsize is None:
+            figsize = (6, 4)
+        fig = plt.figure(figsize=figsize)
+        colors = ['violet', 'lime', 'tomato']
+
+        if num_steps is None:
+            num_steps = vals.shape[0]-1
+        else:
+            num_steps = min(num_steps, vals.shape[0]-1)
+
+        ax = fig.add_axes([0.15, 0.4, 0.8, 0.5])
+        h_lines = []
+        for i in range(3):
+            h, = ax.plot(np.nan, np.nan, color=colors[i])
+            h_lines.append(h)
+        if show_legend:
+            ax.legend(['Box A', 'Box B', 'Box C'], fontsize='x-small', loc='upper right')
+        ax.set_xlim([0, num_steps])
+        if xlabel is None:
+            ax.set_xlabel('Time (sec)' if use_sec else '$t$')
+        else:
+            ax.set_xlabel(xlabel)
+        ax.set_ylim([0, 1.05])
+        if ylabel is not None:
+            ax.set_ylabel(ylabel)
+
+        def update(t):
+            for i, h in enumerate(h_lines):
+                h.set_data(np.array([
+                    np.arange(t+1)*self.dt if use_sec else np.arange(t+1),
+                    vals[:t+1, i],
+                ]))
+            return *h_lines,
+
+        ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
+        return fig, ani
