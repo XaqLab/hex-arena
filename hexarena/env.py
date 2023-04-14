@@ -153,7 +153,7 @@ class ForagingEnv(Env):
         pos, gaze, colors, push, success,
         num_steps: Optional[int] = None,
         figsize: tuple[float, float] = None,
-        use_sec: bool = False,
+        use_sec: bool = True,
     ):
         assert len(self.boxes)==3, "Only implemented for three boxes."
         if num_steps is None:
@@ -224,73 +224,6 @@ class ForagingEnv(Env):
         ani = FuncAnimation(fig, update, frames=range(num_steps), blit=True)
         return fig, ani
 
-    def play_box_beliefs(self,
-        episode: Episode,
-        p_s: BaseDistribution,
-        aname: str = 'cue-belief-trace.gif',
-        figsize: tuple[float, float] = None,
-        use_sec: bool = False,
-    ):
-        assert len(self.boxes)==3, "Only implemented for three boxes."
-        if figsize is None:
-            figsize = (6, 4)
-        fig = plt.figure(figsize=figsize)
-        colors = ['violet', 'lime', 'tomato']
-
-        nvec = self.state_space.nvec[-6:]
-        box_states = np.stack(np.unravel_index(np.arange(np.prod(nvec)), nvec)).T
-
-        beliefs = np.zeros((episode.num_steps+1, 3)) # probability of food in each box
-        for t in range(episode.num_steps+1):
-            belief = episode.beliefs[t]
-            states = np.tile(episode.states[t], (np.prod(nvec), 1))
-            states[:, 2:] = box_states
-            p_s.set_param_vec(belief)
-            with torch.no_grad():
-                _probs = p_s.loglikelihoods(
-                    torch.tensor(states, dtype=torch.long),
-                ).exp().numpy()
-            for i in range(3):
-                beliefs[t, i] = _probs[box_states[:, 2*i]==1].sum()
-
-        ax = fig.add_axes([0.15, 0.6, 0.8, 0.3])
-        c_lines = []
-        for i in range(3):
-            h, = ax.plot(np.nan, np.nan, color=colors[i])
-            c_lines.append(h)
-        ax.set_xlim(np.array([-0.05, 1.05])*episode.num_steps)
-        ax.set_xticklabels([])
-        ax.set_ylim([0, 1.05])
-        ax.set_ylabel('Cue')
-
-        ax = fig.add_axes([0.15, 0.2, 0.8, 0.3])
-        b_lines = []
-        for i in range(3):
-            h, = ax.plot(np.nan, np.nan, color=colors[i])
-            b_lines.append(h)
-        ax.legend(['Box A', 'Box B', 'Box C'], fontsize='x-small', loc='lower right')
-        ax.set_xlim(np.array([-0.05, 1.05])*episode.num_steps)
-        ax.set_xlabel('Time (sec)' if use_sec else '$t$')
-        ax.set_ylim([0, 1.05])
-        ax.set_ylabel('Belief')
-
-        def update(t):
-            for i, h in enumerate(c_lines):
-                h.set_data(np.array([
-                    np.arange(t+1),
-                    np.array([episode.infos[j]['cues'][i] for j in range(t+1)]),
-                ]))
-            for i, h in enumerate(b_lines):
-                h.set_data(np.array([
-                    np.arange(t+1),
-                    beliefs[:t+1, i],
-                ]))
-            return *c_lines, *b_lines
-
-        ani = FuncAnimation(fig, update, frames=range(episode.num_steps+1), blit=True)
-        ani.save(aname)
-        return fig, ani
-
     def plot_occupancy(self,
         pos: Iterable[int], gaze: Iterable[int],
         figsize: tuple[float, float] = None,
@@ -333,17 +266,39 @@ class ForagingEnv(Env):
             ax.set_title(title)
         return fig_p, fig_g
 
+    def food_probs(self,
+        beliefs, states,
+        p_s: BaseDistribution,
+    ):
+        num_steps = len(beliefs)-1
+        nvec = self.state_space.nvec[-6:]
+        box_states = np.stack(np.unravel_index(np.arange(np.prod(nvec)), nvec)).T
+
+        probs = np.zeros((num_steps+1, 3)) # probability of food in each box
+        for t in range(num_steps+1):
+            belief = beliefs[t]
+            _states = np.tile(states[t], (np.prod(nvec), 1))
+            _states[:, 2:] = box_states
+            p_s.set_param_vec(belief)
+            with torch.no_grad():
+                _probs = p_s.loglikelihoods(
+                    torch.tensor(_states, dtype=torch.long),
+                ).exp().numpy()
+            for i in range(3):
+                probs[t, i] = _probs[box_states[:, 2*i]==1].sum()
+        return probs
+
     def play_traces(self,
         vals, num_steps = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         figsize: tuple[float, float] = None,
         show_legend: bool = True,
-        use_sec: bool = False,
+        use_sec: bool = True,
     ):
         assert len(self.boxes)==3, "Only implemented for three boxes."
         if figsize is None:
-            figsize = (6, 4)
+            figsize = (6, 2.5)
         fig = plt.figure(figsize=figsize)
         colors = ['violet', 'lime', 'tomato']
 
@@ -352,7 +307,7 @@ class ForagingEnv(Env):
         else:
             num_steps = min(num_steps, vals.shape[0]-1)
 
-        ax = fig.add_axes([0.15, 0.4, 0.8, 0.5])
+        ax = fig.add_axes([0.15, 0.25, 0.8, 0.6])
         h_lines = []
         for i in range(3):
             h, = ax.plot(np.nan, np.nan, color=colors[i])
