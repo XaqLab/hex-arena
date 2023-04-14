@@ -28,10 +28,12 @@ class ForagingEnv(Env):
         monkey: Optional[dict] = None,
         time_cost: Optional[float] = None,
         dt: Optional[float] = None,
+        reward: Optional[float] = None,
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
         self.dt = _rcParams.dt if dt is None else dt
+        self.reward = _rcParams.reward if reward is None else reward
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
         self.arena: Arena = arena.instantiate()
@@ -43,8 +45,10 @@ class ForagingEnv(Env):
         self.boxes: list[FoodBox] = []
         for i in range(num_boxes):
             box = Config(boxes[i])
-            box._target_ = 'hexarena.box.FoodBox'
-            box.dt = self.dt
+            box.update({
+                '_target_': 'hexarena.box.FoodBox',
+                'dt': self.dt, 'reward': self.reward,
+            })
             box: FoodBox = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
@@ -52,8 +56,8 @@ class ForagingEnv(Env):
         monkey._target_ = 'hexarena.monkey.Monkey'
         self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
-        # environment parameter is the concatenation of monkey's and boxes'
-        self._nums_params, self.param_low, self.param_high = [], [], []
+        # environment parameter is (reward, *monkey_param, *boxes_param)
+        self._nums_params, self.param_low, self.param_high = [], [0], [np.inf]
         for x in self._components():
             self._nums_params.append(len(x.get_param()))
             self.param_low += [*x.param_low]
@@ -78,18 +82,19 @@ class ForagingEnv(Env):
         self.action_space = Discrete(self._push+1)
 
     def _components(self):
-        return [self.monkey]+self.boxes
+        return self.boxes+[self.monkey]
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
-        param = []
+        param = [self.reward]
         for x in self._components():
             param += [*x.get_param()]
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets environment parameter."""
-        idx = 0
+        self.reward = param[0]
+        idx = 1
         for x, num_param in zip(self._components(), self._nums_params):
             x.set_param(param[idx:(idx+num_param)])
             idx += num_param

@@ -14,6 +14,7 @@ class TestForagingEnv(unittest.TestCase):
         self.assertIsInstance(env.state_space, MultiDiscrete)
         self.assertIsInstance(env.observation_space, MultiDiscrete)
 
+        dt, reward = 2., 15.
         env = ForagingEnv(
             arena={'resol': 4},
             boxes=[
@@ -21,8 +22,11 @@ class TestForagingEnv(unittest.TestCase):
                 {'rate': 1/21}, {'rate': 1/35},
             ],
             monkey={'push_cost': 0., 'turn_price': 0.02},
-            dt=2.,
+            dt=dt, reward=reward,
         )
+        for box in env.boxes:
+            self.assertEqual(box.dt, dt)
+            self.assertEqual(box.reward, reward)
 
     def test_reset(self):
         env = ForagingEnv()
@@ -49,6 +53,44 @@ class TestForagingEnv(unittest.TestCase):
             self.assertFalse(truncated)
             self.assertIsInstance(info, dict)
 
+    def test_param(self):
+        reward = 15.
+        boxes = [
+            {'rate': 0.015, 'sigma': 0.01},
+            {'rate': 0.025, 'sigma': 0.02},
+            {'rate': 0.035, 'sigma': 0.03},
+        ]
+        monkey = {
+            'push_cost': 0.012,
+            'turn_price': 0.023,
+            'move_price': 0.034,
+            'look_price': 0.045,
+        }
+        env = ForagingEnv(
+            boxes=boxes, monkey=monkey, reward=reward,
+        )
+        param = (
+            reward,
+            boxes[0]['rate'], boxes[0]['sigma'],
+            boxes[1]['rate'], boxes[1]['sigma'],
+            boxes[2]['rate'], boxes[2]['sigma'],
+            monkey['push_cost'], monkey['turn_price'],
+            monkey['move_price'], monkey['look_price'],
+        )
+        self.assertEqual(param, tuple(env.get_param()))
+
+        param = (
+            12., 0.035, 0.03, 0.025, 0.02, 0.015, 0.01,
+            0.021, 0.032, 0.043, 0.054,
+        )
+        env.set_param(param)
+        self.assertEqual(env.reward, param[0])
+        for i in range(3):
+            self.assertEqual(tuple(env.boxes[i].get_param()), param[2*i+1:2*i+3])
+        self.assertEqual(tuple(env.monkey.get_param()), param[7:])
+
+        self.assertTrue(np.all(np.array(param)>np.array(env.param_low)))
+        self.assertTrue(np.all(np.array(param)<np.array(env.param_high)))
 
 if __name__=='__main__':
     unittest.main()
