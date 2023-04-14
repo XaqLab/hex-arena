@@ -9,4 +9,3 @@ env_param:
   - null    # box 2 sigma
   - ['Range', {'low': 0.02, 'high': 0.06}]  # box 3 rate
   - null    # box 3 sigma
-  
