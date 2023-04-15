@@ -29,3 +29,4 @@ env:
     _init_:
       time_cost: 0.
       dt: 1.0 # sec
+      reward: 10.
