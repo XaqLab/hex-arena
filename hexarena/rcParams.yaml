@@ -21,8 +21,8 @@ monkey:
       turn_price: 0.001 # deg^{-1}
       move_price: 0.1
       look_price: 0. # deg^{-1}
-      velocity: 1.5 # tile/step
-      k_gamma: 10 # shape parameter for gamma distribution
+      velocity: 0.8 # tile/step
+      k_gamma: 10 # gamma shape parameter for move distance distribution
 
 env:
   ForagingEnv:
