@@ -23,18 +23,25 @@ class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
 
     def __init__(self,
+        *,
         arena: Optional[dict] = None,
-        boxes: Optional[list[Optional[dict]]] = None,
         monkey: Optional[dict] = None,
+        boxes: Optional[list[Optional[dict]]] = None,
         time_cost: Optional[float] = None,
         dt: Optional[float] = None,
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
         self.dt = _rcParams.dt if dt is None else dt
+
         arena = Config(arena)
         arena._target_ = 'hexarena.arena.Arena'
         self.arena: Arena = arena.instantiate()
+
+        monkey = Config(monkey)
+        monkey._target_ = 'hexarena.monkey.Monkey'
+        self.monkey: Monkey = monkey.instantiate(arena=self.arena)
+
         num_boxes = 3 # fixed three boxes
         if boxes is None:
             boxes = [None]*num_boxes
@@ -43,16 +50,14 @@ class ForagingEnv(Env):
         self.boxes: list[FoodBox] = []
         for i in range(num_boxes):
             box = Config(boxes[i])
-            box._target_ = 'hexarena.box.FoodBox'
+            if '_target_' not in box:
+                box._target_ = 'hexarena.box.FoodBox'
             box.dt = self.dt
             box: FoodBox = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
-        monkey = Config(monkey)
-        monkey._target_ = 'hexarena.monkey.Monkey'
-        self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
-        # environment parameter is the concatenation of monkey's and boxes'
+        # environment parameter: (*monkey_param, *boxes_param)
         self._nums_params, self.param_low, self.param_high = [], [], []
         for x in self._components():
             self._nums_params.append(len(x.get_param()))
@@ -66,10 +71,8 @@ class ForagingEnv(Env):
             nvec += [*x.state_space.nvec]
         self.state_space = MultiDiscrete(nvec)
         # observation: (*monkey_state, *boxes_colors)
-        self._observation_dims = [len(self.monkey.state_space.nvec)]
         nvec = [*self.monkey.state_space.nvec]
         for box in self.boxes:
-            self._observation_dims.append(box.num_patches)
             nvec += [box.num_grades+1]*box.num_patches # additional grade for invisible
         self.observation_space = MultiDiscrete(nvec)
         # action: move*look+push

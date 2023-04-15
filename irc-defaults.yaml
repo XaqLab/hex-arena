@@ -3,18 +3,13 @@ env:
   arena:
     resol: 2
   boxes:
-    - num_grades: 5
+    - num_grades: 10
       num_patches: 1
-    - num_grades: 5
+    - num_grades: 10
       num_patches: 1
-    - num_grades: 5
+    - num_grades: 10
       num_patches: 1
   time_cost: 0.1
-  dt: 5.
-task:
-  ent_coef: 0.1
 model:
-  p_s:
+  p_s: # (pos, gaze, (food_1, cue_1), (food_2, cue_2), (food_3, cue_3))
     idxs: [[0], [1], [2, 3], [4, 5], [6, 7]]
-  p_o:
-    idxs: [[0], [1], [2], [3], [4]]
