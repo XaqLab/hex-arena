@@ -29,7 +29,6 @@ class ForagingEnv(Env):
         boxes: Optional[list[Optional[dict]]] = None,
         time_cost: Optional[float] = None,
         dt: Optional[float] = None,
-        reward: Optional[float] = None,
     ):
         _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
@@ -82,19 +81,18 @@ class ForagingEnv(Env):
         self.action_space = Discrete(self._push+1)
 
     def _components(self):
-        return self.boxes+[self.monkey]
+        return [self.monkey]+self.boxes
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
-        param = [self.reward]
+        param = []
         for x in self._components():
             param += [*x.get_param()]
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets environment parameter."""
-        self.reward = param[0]
-        idx = 1
+        idx = 0
         for x, num_param in zip(self._components(), self._nums_params):
             x.set_param(param[idx:(idx+num_param)])
             idx += num_param
