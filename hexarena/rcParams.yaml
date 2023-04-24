@@ -7,10 +7,14 @@ box:
   BaseFoodBox:
     _init_:
       dt: 1.0 # sec
-      reward: 10.
+      reward: 20.
       num_grades: 10
       num_patches: 16
       sigma: 0.2
+  StationaryBox:
+    _init_:
+      tau: 20 # sec
+      eps: 1.e-3
   Box:
     _init_:
       rate: 0.05 # count/sec

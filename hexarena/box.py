@@ -103,12 +103,65 @@ class BaseFoodBox:
         """
         assert action==0 or action==1
         if action==1 and self.food:
-            reward = 0.
-        else:
             reward = self.reward
+        else:
+            reward = 0.
         self._step(action)
         self.render()
         return reward
+
+
+class StationaryBox(BaseFoodBox):
+
+    def __init__(self,
+        *,
+        tau: Optional[float] = None,
+        eps: Optional[float] = None,
+        **kwargs,
+    ):
+        _rcParams = Config(rcParams.get('box.StationaryBox._init_'))
+        super().__init__(**kwargs)
+        self.tau = _rcParams.tau if tau is None else tau
+        self.eps = _rcParams.eps if eps is None else eps
+
+        # state: (food, cue)
+        self.state_space = MultiDiscrete([2, self.num_grades])
+        # param: (tau, sigma)
+        self.param_low = [0, 0]
+        self.param_high = [np.inf, np.inf]
+
+    def get_param(self) -> EnvParam:
+        r"""Returns box parameters."""
+        param = (self.tau, self.sigma)
+        return param
+
+    def set_param(self, param: EnvParam) -> None:
+        r"""Sets box parameters."""
+        self.tau, self.sigma = param
+
+    def get_state(self) -> BoxState:
+        r"""Returns box state."""
+        state = (int(self.food), int(self.cue*self.num_grades))
+        return state
+
+    def set_state(self, state: BoxState) -> None:
+        r"""Sets box state."""
+        self.food = bool(state[0])
+        self.cue = (float(state[1])+self.rng.random())/self.num_grades
+
+    def _reset(self):
+        self.food = False
+        self.cue = self.eps
+
+    def _step(self, action: int):
+        if action==0: # no push
+            p = 1-np.exp(-self.dt/self.tau)
+            if self.rng.random()<p:
+                self.food = True
+            self.cue = 1-(1-self.cue)*(1-p)
+        else: # push
+            self.food = False
+            self.cue = self.eps
 
 
 class FoodBox:
