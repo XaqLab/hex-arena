@@ -10,7 +10,6 @@ from matplotlib.animation import FuncAnimation
 
 from typing import Optional
 from collections.abc import Iterable
-from irc.buffer import Episode
 from irc.distribution import BaseDistribution
 
 from . import rcParams

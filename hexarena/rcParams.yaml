@@ -4,6 +4,13 @@ arena:
       resol: 2
 
 box:
+  BaseFoodBox:
+    _init_:
+      dt: 1.0 # sec
+      reward: 10.
+      num_grades: 10
+      num_patches: 16
+      sigma: 0.2
   Box:
     _init_:
       rate: 0.05 # count/sec

@@ -5,7 +5,111 @@ from jarvis.config import Config
 from typing import Optional
 
 from . import rcParams
-from .alias import BoxState, EnvParam
+from .alias import Array, BoxState, EnvParam
+
+
+class BaseFoodBox:
+    r"""Base class for a food box with 2D color cue."""
+
+    def __init__(self,
+        *,
+        dt: Optional[float] = None,
+        reward: Optional[float] = None,
+        num_grades: Optional[int] = None,
+        num_patches: Optional[int] = None,
+        sigma: Optional[float] = None,
+    ):
+        _rcParams = Config(rcParams.get('box.BaseFoodBox._init_'))
+        self.dt = _rcParams.dt if dt is None else dt
+        self.reward = _rcParams.reward if reward is None else reward
+        self.num_grades = _rcParams.num_grades if num_grades is None else num_grades
+        self.num_patches = _rcParams.num_patches if num_patches is None else num_patches
+        self.sigma = _rcParams.sigma if sigma is None else sigma
+
+        self.mat_size = int(self.num_patches**0.5)
+        assert self.mat_size**2==self.num_patches, (
+            f"`num_patches` ({self.num_patches}) must be a squre of an integer."
+        )
+
+        self.state_space: MultiDiscrete = None
+        self.param_low: EnvParam = None
+        self.param_high: EnvParam = None
+
+        self.food: bool = None # food availability
+        self.cue: float = None # a number in (0, 1) for color cue
+        self.colors: Array = None # a 2D int array of shape (mat_size, mat_size)
+
+        self.rng = np.random.default_rng()
+
+    def get_param(self) -> EnvParam:
+        r"""Returns box parameters."""
+        raise NotImplementedError
+
+    def set_param(self, param: EnvParam) -> None:
+        r"""Sets box parameters."""
+        raise NotImplementedError
+
+    def get_state(self) -> BoxState:
+        r"""Returns box state."""
+        raise NotImplementedError
+
+    def set_state(self, state: BoxState) -> None:
+        r"""Sets box state."""
+        raise NotImplementedError
+
+    def render(self) -> None:
+        r"""Renders color cues."""
+        p = np.full((self.mat_size, self.mat_size), fill_value=self.cue)
+        z = np.arctanh(p*2-1)
+        z += self.rng.normal(0, self.sigma, z.shape)
+        p = (np.tanh(z)+1)/2
+        self.colors = np.floor(p*self.num_grades).astype(int)
+
+    def _reset(self) -> None:
+        r"""Resets food and cue."""
+        raise NotImplementedError
+
+    def reset(self, seed: Optional[int] = None) -> None:
+        r"""Resets box state.
+
+        Args
+        ----
+        seed:
+            If provided, reset the random number generator.
+
+        """
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        self._reset()
+        self.render()
+
+    def _step(self, action: int) -> None:
+        r"""Updates food and cue."""
+        raise NotImplementedError
+
+    def step(self, action: int) -> float:
+        r"""Updates box state.
+
+        Args
+        ----
+        action:
+            A binary action for 'no push' (0) and 'push' (1).
+
+        Returns
+        -------
+        reward:
+            Food reward from the box. Action costs are not considered here.
+
+        """
+        assert action==0 or action==1
+        if action==1 and self.food:
+            reward = 0.
+        else:
+            reward = self.reward
+        self._step(action)
+        self.render()
+        return reward
+
 
 class FoodBox:
     r"""Class for a food box with 2D color cue."""
@@ -87,13 +191,6 @@ class FoodBox:
         ----
         seed:
             If provided, reset the random number generator.
-
-        Returns
-        -------
-        observation:
-            Color cue on the screen, see `_observe` for more details.
-        info:
-            Additional information.
 
         """
         if seed is not None:
