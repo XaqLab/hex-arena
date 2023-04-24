@@ -15,6 +15,11 @@ box:
     _init_:
       tau: 20 # sec
       eps: 1.e-3
+  RestorableBox:
+    _init_:
+      tau_min: 5.0 # sec
+      jump_ratio: 2.0
+      decay_rate: 0.05 # 1/sec
   Box:
     _init_:
       rate: 0.05 # count/sec

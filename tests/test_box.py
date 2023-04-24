@@ -1,12 +1,12 @@
 import unittest
 
 import numpy as np
-from hexarena.box import StationaryBox
+from hexarena.box import StationaryBox, RestorableBox
 from hexarena.alias import Array
 
 
 class TestBaseBox(unittest.TestCase):
-    box_classes = [StationaryBox]
+    box_classes = [StationaryBox, RestorableBox]
 
     def test_basics(self):
         for Box in self.box_classes:
