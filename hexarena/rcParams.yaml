@@ -17,9 +17,11 @@ box:
       eps: 1.e-3
   RestorableBox:
     _init_:
-      tau_min: 5.0 # sec
+      k_tau: 5
+      theta_tau: 3 # sec
+      change_rate: 0.05 # 1/sec
       jump_ratio: 2.0
-      decay_rate: 0.05 # 1/sec
+      restore_ratio: 0.8
   Box:
     _init_:
       rate: 0.05 # count/sec

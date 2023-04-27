@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 from gym.spaces import MultiDiscrete
 from jarvis.config import Config
 
@@ -60,7 +61,7 @@ class BaseFoodBox:
     def render(self) -> None:
         r"""Renders color cues."""
         p = np.full((self.mat_size, self.mat_size), fill_value=self.cue)
-        z = np.arctanh(p*2-1)
+        z = np.arctanh((p-0.5)*1.99)
         z += self.rng.normal(0, self.sigma, z.shape)
         p = (np.tanh(z)+1)/2
         self.colors = np.floor(p*self.num_grades).astype(int)
@@ -168,60 +169,79 @@ class RestorableBox(BaseFoodBox):
 
     def __init__(self,
         *,
-        tau_min: Optional[float] = None,
+        k_tau: Optional[float] = None,
+        theta_tau: Optional[float] = None,
+        change_rate: Optional[float] = None,
         jump_ratio: Optional[float] = None,
-        decay_rate: Optional[float] = None,
+        restore_ratio: Optional[float] = None,
         **kwargs,
     ):
         _rcParams = Config(rcParams.get('box.RestorableBox._init_'))
         super().__init__(**kwargs)
-        self.tau_min = _rcParams.tau_min if tau_min is None else tau_min
+        self.k_tau = _rcParams.k_tau if k_tau is None else k_tau
+        self.theta_tau = _rcParams.theta_tau if theta_tau is None else theta_tau
+        self.change_rate = _rcParams.change_rate if change_rate is None else change_rate
         self.jump_ratio = _rcParams.jump_ratio if jump_ratio is None else jump_ratio
-        self.decay_rate = _rcParams.decay_rate if decay_rate is None else decay_rate
+        self.restore_ratio = _rcParams.restore_ratio if restore_ratio is None else restore_ratio
 
         self.tau: float = None
 
         # state: (food, tau)
         self.state_space = MultiDiscrete([2, self.num_grades])
-        # param: (tau_min, jump_ratio, decay_rate, sigma)
-        self.param_low = [0, 0, 0, 0]
-        self.param_high = [np.inf, np.inf, np.inf, np.inf]
+        # param: (theta_tau, change_rate, jump_ratio, restore_ratio, sigma)
+        self.param_low = [0, 0, 0, 0, 0]
+        self.param_high = [np.inf, np.inf, np.inf, np.inf, np.inf]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
-        param = (self.tau_min, self.jump_ratio, self.decay_rate, self.sigma)
+        param = (self.theta_tau, self.change_rate, self.jump_ratio, self.restore_ratio, self.sigma)
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets box parameters."""
-        self.tau_min, self.jump_ratio, self.decay_rate, self.sigma = param
+        self.theta_tau, self.change_rate, self.jump_ratio, self.restore_ratio, self.sigma = param
 
     def get_state(self) -> BoxState:
         r"""Returns box state."""
-        state = (int(self.food), int(self.cue*self.num_grades))
+        state = (int(self.food), int(self.cue*self.num_grades*0.999))
         return state
+
+    def _tau2cue(self, tau):
+        cue = 1-stats.gamma.cdf(tau, a=self.k_tau, scale=self.theta_tau)
+        return cue
+
+    def _cue2tau(self, cue):
+        tau = stats.gamma.ppf(1-cue, a=self.k_tau, scale=self.theta_tau)
+        return tau
 
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
         self.food = bool(state[0])
         self.cue = (float(state[1])+self.rng.random())/self.num_grades
-        self.tau = self.tau_min/self.cue
+        self.tau = self._cue2tau(self.cue)
 
     def _reset(self):
         self.food = False
         self.cue = self.rng.random()
-        self.tau = self.tau_min/self.cue
+        self.tau = self._cue2tau(self.cue)
 
     def _step(self, action: int):
         if action==0: # no push
             p = 1-np.exp(-self.dt/self.tau)
             if self.rng.random()<p:
                 self.food = True
-            self.tau = self.tau_min+(self.tau-self.tau_min)*np.exp(-self.decay_rate*self.dt)
+            p = 1-np.exp(-self.dt*self.change_rate)
+            if self.rng.random()<p:
+                new_tau = self.rng.gamma(self.k_tau, self.theta_tau)
+                self.tau = np.exp(
+                    (1-self.restore_ratio)*np.log(self.tau)
+                    +self.restore_ratio*np.log(new_tau)
+                )
         else: # push
+            if not self.food:
+                self.tau *= self.jump_ratio
             self.food = False
-            self.tau *= self.jump_ratio
-        self.cue = self.tau_min/self.tau
+        self.cue = self._tau2cue(self.tau)
 
 
 class FoodBox:

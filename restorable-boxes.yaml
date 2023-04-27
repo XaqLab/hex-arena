@@ -1,0 +1,20 @@
+env:
+  _target_: 'hexarena.env.ForagingEnv'
+  arena:
+    resol: 2
+  boxes:
+    - reward: 20.
+      num_grades: 10
+      num_patches: 1
+      _target_: 'hexarena.box.RestorableBox'
+    - reward: 20.
+      num_grades: 10
+      num_patches: 1
+      _target_: 'hexarena.box.RestorableBox'
+    - reward: 20.
+      num_grades: 10
+      num_patches: 1
+      _target_: 'hexarena.box.RestorableBox'
+model:
+  p_s: # (pos, gaze, (food_1, cue_1), (food_2, cue_2), (food_3, cue_3))
+    idxs: [[0], [1], [2, 3], [4, 5], [6, 7]]
