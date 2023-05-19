@@ -28,7 +28,7 @@ class Arena:
             anchors: six at the corner and one at the center.
 
         """
-        _rcParams = Config(rcParams.get('arena.Arena._init_'))
+        _rcParams = rcParams.get('arena.Arena._init_', {})
         self.resol = _rcParams.resol if resol is None else resol
         assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
