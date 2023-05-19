@@ -29,15 +29,17 @@ class Arena:
 
         """
         _rcParams = rcParams.get('arena.Arena._init_', {})
-        self.resol = _rcParams.resol if resol is None else resol
+        self.resol: int = _rcParams.resol if resol is None else resol
         assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
 
         self.num_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
-        self.corners, self.boxes = [], []
-        self.inners, self.outers = [], []
+        self.corners: list[int] = []
+        self.boxes: list[int] = []
+        self.inners: list[int] = []
+        self.outers: list[int] = []
         for i in range(self.resol+1):
             if i==0:
                 self.center = 0
@@ -61,7 +63,7 @@ class Arena:
                     x = x0+k/self.resol*np.cos(theta)
                     y = y0+k/self.resol*np.sin(theta)
                     anchors.append((x, y))
-        self.anchors = tuple(anchors)
+        self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
     def plot_map(self,
         ax: Axes,
