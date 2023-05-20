@@ -140,7 +140,7 @@ class Monkey:
             look = (action-self.arena.num_tiles**2)%self.arena.num_tiles
         return push, move, look
 
-    def step(self, action: int) -> float:
+    def step(self, push: bool, move: int, look: int) -> float:
         r"""Monkey acts for one step.
 
         Args
@@ -156,7 +156,6 @@ class Monkey:
             move cost, look cost and push cost.
 
         """
-        push, move, look = self.convert_action(action)
         reward = 0.
         # turn cost
         phi = self._direction(self.gaze, self.pos) # face direction

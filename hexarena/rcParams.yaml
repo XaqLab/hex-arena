@@ -8,29 +8,20 @@ box:
     _init_:
       dt: 1.0 # sec
       reward: 20.
-      num_grades: 10
-      num_patches: 16
+      num_levels: 10
+      num_grades: 5
+      num_patches: 1
       sigma: 0.2
   StationaryBox:
     _init_:
       tau: 20 # sec
-      eps: 1.e-3
   RestorableBox:
     _init_:
       k_tau: 5
       theta_tau: 3 # sec
       change_rate: 0.05 # 1/sec
-      jump_ratio: 2.0
       restore_ratio: 0.8
-  Box:
-    _init_:
-      rate: 0.05 # count/sec
-      dt: 1.0 # sec
-      reward: 10.
-      num_grades: 8
-      num_patches: 16
-      sigma: 0.2
-      eps: 1.e-3
+      jump_ratio: 2.0
 
 monkey:
   Monkey:
@@ -47,3 +38,4 @@ env:
     _init_:
       time_cost: 0.
       dt: 1.0 # sec
+      box: hexarena.box.FoodBox
