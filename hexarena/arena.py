@@ -34,6 +34,7 @@ class Arena:
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
 
+        self.num_boxes = 3
         self.num_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
         self.corners: list[int] = []
