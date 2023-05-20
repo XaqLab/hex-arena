@@ -14,7 +14,7 @@ from irc.distribution import BaseDistribution
 
 from . import rcParams
 from .arena import Arena
-from .box import FoodBox
+from .box import BaseFoodBox
 from .monkey import Monkey
 from .alias import EnvParam, Observation, State
 
@@ -29,7 +29,7 @@ class ForagingEnv(Env):
         time_cost: Optional[float] = None,
         dt: Optional[float] = None,
     ):
-        _rcParams = Config(rcParams.get('env.ForagingEnv._init_'))
+        _rcParams = rcParams.get('env.ForagingEnv._init_', {})
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
         self.dt = _rcParams.dt if dt is None else dt
 
@@ -41,25 +41,25 @@ class ForagingEnv(Env):
         monkey._target_ = 'hexarena.monkey.Monkey'
         self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
-        num_boxes = 3 # fixed three boxes
+        num_boxes = self.arena.num_boxes
         if boxes is None:
             boxes = [None]*num_boxes
         else:
             assert len(boxes)==num_boxes
-        self.boxes: list[FoodBox] = []
+        self.boxes: list[BaseFoodBox] = []
         for i in range(num_boxes):
             box = Config(boxes[i])
             if '_target_' not in box:
-                box._target_ = 'hexarena.box.FoodBox'
+                box._target_ = _rcParams.box
             box.dt = self.dt
-            box: FoodBox = box.instantiate()
+            box = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
 
         # environment parameter: (*monkey_param, *boxes_param)
-        self._nums_params, self.param_low, self.param_high = [], [], []
+        self._param_dims, self.param_low, self.param_high = [], [], []
         for x in self._components():
-            self._nums_params.append(len(x.get_param()))
+            self._param_dims.append(len(x.get_param()))
             self.param_low += [*x.param_low]
             self.param_high += [*x.param_high]
 
@@ -74,38 +74,36 @@ class ForagingEnv(Env):
         for box in self.boxes:
             nvec += [box.num_grades+1]*box.num_patches # additional grade for invisible
         self.observation_space = MultiDiscrete(nvec)
-        # action: move*look+push
-        self._num_moves = 7
-        self._push = self._num_moves*self.arena.num_tiles
-        self.action_space = Discrete(self._push+1)
+        # action: (push, move, look)
+        self.action_space = self.monkey.action_space
 
     def _components(self):
         return [self.monkey]+self.boxes
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
-        param = []
+        param = tuple()
         for x in self._components():
-            param += [*x.get_param()]
+            param += tuple([*x.get_param()])
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets environment parameter."""
         idx = 0
-        for x, num_param in zip(self._components(), self._nums_params):
-            x.set_param(param[idx:(idx+num_param)])
-            idx += num_param
+        for x, param_dim in zip(self._components(), self._param_dims):
+            x.set_param([param[i] for i in range(idx, idx+param_dim)])
+            idx += param_dim
 
     def get_state(self) -> State:
-        state = []
+        state = tuple()
         for x in self._components():
-            state += [*x.get_state()]
+            state += tuple([*x.get_state()])
         return state
 
     def set_state(self, state: State) -> None:
         idx = 0
         for x, state_dim in zip(self._components(), self._state_dims):
-            x.set_state(state[idx:(idx+state_dim)])
+            x.set_state([state[i] for i in range(idx, idx+state_dim)])
             idx += state_dim
 
     def reset(self, seed: Optional[int] = None) -> tuple[Observation, dict]:
@@ -117,29 +115,22 @@ class ForagingEnv(Env):
 
     def step(self, action: int) -> tuple[Observation, float, bool, bool, dict]:
         reward, terminated, truncated = -self.time_cost, False, False
-        if action<self._push:
-            move = action%self._num_moves
-            look = action//self._num_moves
-            reward += self.monkey.step(move, look)
+        push, move, look = self.monkey.convert_action(action)
+        reward += self.monkey.step(push, move, look)
         for box in self.boxes:
-            if action==self._push and self.monkey.pos==box.pos:
-                self.monkey.gaze = self.monkey.pos
-                reward += box.step(1)
-                reward -= self.monkey.push_cost
-            else:
-                reward += box.step(0)
+            reward += box.step(push and move==box.pos)
         observation = self._get_observation()
         info = self._get_info()
         return observation, reward, terminated, truncated, info
 
     def _get_observation(self) -> Observation:
-        observation = [*self.monkey.get_state()]
+        observation = tuple([*self.monkey.get_state()])
         for box in self.boxes:
             if self.monkey.gaze==box.pos:
                 colors = box.colors.reshape(-1)
             else:
                 colors = np.full((box.num_patches,), fill_value=box.num_grades, dtype=int)
-            observation += [*colors]
+            observation += tuple([*colors])
         return observation
 
     def _get_info(self) -> dict:

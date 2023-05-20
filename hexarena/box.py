@@ -16,7 +16,6 @@ class BaseFoodBox:
     cue: float # a number in (0, 1)
     colors: Array # a 2D int array of shape (mat_size, mat_size)
 
-    state_space: MultiDiscrete
     param_low: EnvParam
     param_high: EnvParam
 
@@ -63,6 +62,7 @@ class BaseFoodBox:
             f"`num_patches` ({self.num_patches}) must be a squre of an integer."
         )
 
+        self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, cue)
         self.rng = np.random.default_rng()
 
     def get_param(self) -> EnvParam:
@@ -119,8 +119,8 @@ class BaseFoodBox:
 
         Args
         ----
-        action:
-            A binary action for 'no push' (0) and 'push' (1).
+        push:
+            Whether to push the button of food box.
 
         Returns
         -------
@@ -165,8 +165,6 @@ class StationaryBox(BaseFoodBox):
         super().__init__(**kwargs)
         self.tau = _rcParams.tau if tau is None else tau
 
-        # state: (food, cue)
-        self.state_space = MultiDiscrete([2, self.num_levels])
         # param: (tau, sigma)
         self.param_low = [0, 0]
         self.param_high = [np.inf, np.inf]
@@ -241,8 +239,6 @@ class RestorableBox(BaseFoodBox):
         self.restore_ratio = _rcParams.restore_ratio if restore_ratio is None else restore_ratio
         self.jump_ratio = _rcParams.jump_ratio if jump_ratio is None else jump_ratio
 
-        # state: (food, cue)
-        self.state_space = MultiDiscrete([2, self.num_levels])
         # param: (theta_tau, change_rate, restore_ratio, jump_ratio, sigma)
         self.param_low = [0, 0, 0, 1, 0]
         self.param_high = [np.inf, np.inf, 1, np.inf, np.inf]

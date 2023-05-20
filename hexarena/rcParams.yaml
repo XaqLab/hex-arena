@@ -3,6 +3,16 @@ arena:
     _init_:
       resol: 2
 
+monkey:
+  Monkey:
+    _init_:
+      push_cost: 1.
+      turn_price: 0.001 # deg^{-1}
+      move_price: 0.1
+      look_price: 0. # deg^{-1}
+      velocity: 0.8 # tile/step
+      k_gamma: 10 # gamma shape parameter for move distance distribution
+
 box:
   BaseFoodBox:
     _init_:
@@ -23,19 +33,9 @@ box:
       restore_ratio: 0.8
       jump_ratio: 2.0
 
-monkey:
-  Monkey:
-    _init_:
-      push_cost: 1.
-      turn_price: 0.001 # deg^{-1}
-      move_price: 0.1
-      look_price: 0. # deg^{-1}
-      velocity: 0.8 # tile/step
-      k_gamma: 10 # gamma shape parameter for move distance distribution
-
 env:
   ForagingEnv:
     _init_:
       time_cost: 0.
       dt: 1.0 # sec
-      box: hexarena.box.FoodBox
+      box: hexarena.box.StationaryBox
