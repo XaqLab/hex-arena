@@ -266,8 +266,9 @@ class RestorableBox(BaseFoodBox):
         self.tau = self._cue2tau(self.cue)
 
     def _reset(self):
-        super()._reset()
-        self.tau = self._cue2tau(self.cue)
+        self.food = False
+        self.tau = self.rng.gamma(self.k_tau, self.theta_tau)
+        self.cue = self._tau2cue(self.tau)
 
     def _step(self, push: bool):
         if push:
