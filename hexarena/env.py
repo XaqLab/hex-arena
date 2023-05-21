@@ -16,7 +16,7 @@ from . import rcParams
 from .arena import Arena
 from .box import BaseFoodBox
 from .monkey import Monkey
-from .alias import EnvParam, Observation, State
+from .alias import EnvParam, Observation, State, Figure
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -147,7 +147,36 @@ class ForagingEnv(Env):
         num_steps: Optional[int] = None,
         figsize: tuple[float, float] = None,
         use_sec: bool = True,
-    ):
+    ) -> tuple[Figure, FuncAnimation]:
+        r"""Creates animation of one episode game play.
+
+        Args
+        ----
+        pos: int array of (num_steps+1,)
+            Tile index of monkey positions.
+        gaze: int array of (num_steps+1,)
+            Tile index of monkey gazes.
+        colors: int array of (num_steps+1, num_boxes, mat_size, mat_size)
+            Colors shown on all boxes, in range [0, num_grades).
+        push: bool array of (num_steps,)
+            Whether the button is pushed.
+        success: bool array of (num_steps,)
+            Whether the food is delivered.
+        num_steps:
+            Number of steps to show from the start, can be shorter than
+            `len(push)`.
+        figsize:
+            Figure size.
+        use_sec:
+            Whether to use seconds as time units. If ``False``, will use time
+            steps as units.
+
+        Returns
+        -------
+        fig, ani:
+            Object handle for the figure and animation.
+
+        """
         assert len(self.boxes)==3, "Only implemented for three boxes."
         if num_steps is None:
             num_steps = len(push)
@@ -161,8 +190,7 @@ class ForagingEnv(Env):
 
         h_boxes = []
         for box in self.boxes:
-            c_size = int(box.num_patches**0.5)
-            _colors = np.zeros((c_size, c_size), dtype=int)
+            _colors = np.zeros((box.mat_size, box.mat_size), dtype=int)
             _x, _y = np.array(self.arena.anchors[box.pos])*1.5
             _s = 0.2
             h_box = ax.imshow(
