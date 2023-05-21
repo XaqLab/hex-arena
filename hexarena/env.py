@@ -242,7 +242,7 @@ class ForagingEnv(Env):
             h_title.set_text(r'$t$='+'{}'.format('{:g} sec'.format(t*self.dt) if use_sec else t))
             return *h_boxes, h_pos, h_gaze, *h_counts, h_title
 
-        ani = FuncAnimation(fig, update, frames=range(num_steps), blit=True)
+        ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
         return fig, ani
 
     def plot_occupancy(self,
@@ -311,13 +311,38 @@ class ForagingEnv(Env):
 
     def play_traces(self,
         vals, num_steps = None,
+        figsize: tuple[float, float] = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
-        figsize: tuple[float, float] = None,
         show_legend: bool = True,
         use_sec: bool = True,
-    ):
-        assert len(self.boxes)==3, "Only implemented for three boxes."
+    ) -> tuple[Figure, FuncAnimation]:
+        r"""Creates animation for variable traces.
+
+        Args
+        ----
+        vals: (num_steps+1, 3)
+            Values in range [0, 1] for all three boxes, e.g. food availability,
+            color cue or belief about the box.
+        num_steps:
+            Number of steps to show from the start.
+        figsize:
+            Figure size.
+        xlabel, ylabel:
+            Labels for x- and y- axis.
+        show_legend:
+            Whether to show legends.
+        use_sec:
+            Whether to use seconds as time units. If ``False``, will use time
+            steps as units.
+
+        Returns
+        -------
+        fig, ani:
+            Object handle for the figure and animation.
+
+        """
+        assert self.arena.num_boxes==3, "Only implemented for three boxes."
         if figsize is None:
             figsize = (6, 2.5)
         fig = plt.figure(figsize=figsize)
