@@ -377,7 +377,9 @@ class ForagingEnv(Env):
             else:
                 h_pos.set_facecolor('yellow')
             h_gaze.set_offsets(self.arena.anchors[gaze[t]])
-            h_title.set_text(r'$t$='+'{}'.format('{:g} sec'.format(t*self.dt) if use_sec else t))
+            h_title.set_text(r'$t$='+'{}'.format(
+                '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
+            ))
             return *h_boxes, h_pos, h_gaze, *h_counts, h_title
 
         ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
@@ -498,7 +500,7 @@ class ForagingEnv(Env):
             h_lines.append(h)
         if show_legend:
             ax.legend(['Box A', 'Box B', 'Box C'], fontsize='x-small', loc='upper right')
-        ax.set_xlim([0, num_steps])
+        ax.set_xlim([0, num_steps*self.dt if use_sec else num_steps])
         if xlabel is None:
             ax.set_xlabel('Time (sec)' if use_sec else '$t$')
         else:

@@ -140,6 +140,27 @@ class Monkey:
             look = (action-self.arena.num_tiles**2)%self.arena.num_tiles
         return push, move, look
 
+    def index_action(self, push: int, move: int, look: int) -> int:
+        r"""Returns action index given interpretable variables.
+
+        Args
+        ----
+        push, move, look:
+            See `convert_action` for more details.
+
+        Returns
+        -------
+        action:
+            See `convert_action` for more details.
+
+        """
+        if push:
+            b_idx = self.arena.boxes.index(move)
+            action = self.arena.num_tiles**2+b_idx*self.arena.num_tiles+look
+        else:
+            action = move*self.arena.num_tiles+look
+        return action
+
     def step(self, push: bool, move: int, look: int) -> float:
         r"""Monkey acts for one step.
 

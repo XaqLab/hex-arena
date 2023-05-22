@@ -8,10 +8,8 @@ monkey:
     _init_:
       push_cost: 1.
       turn_price: 0.001 # deg^{-1}
-      move_price: 0.1
-      look_price: 0. # deg^{-1}
-      velocity: 0.8 # tile/step
-      k_gamma: 10 # gamma shape parameter for move distance distribution
+      move_price: 1.
+      look_price: 0.001 # deg^{-1}
 
 box:
   BaseFoodBox:
