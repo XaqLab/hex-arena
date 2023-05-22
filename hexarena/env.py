@@ -16,7 +16,7 @@ from . import rcParams
 from .arena import Arena
 from .box import BaseFoodBox
 from .monkey import Monkey
-from .alias import EnvParam, Observation, State, Figure
+from .alias import EnvParam, Observation, State, Figure, Array
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -141,6 +141,144 @@ class ForagingEnv(Env):
             'colors': [box.colors for box in self.boxes],
         }
         return info
+
+    def convert_experiment_data(self, block_data: dict, arena_radius=1860.5) -> dict:
+        r"""Converts raw experiment data to discrete values.
+
+        Spatial and temporal discretization is done to get integer states,
+        observations and actions.
+
+        Args
+        ----
+        block_data:
+            One block of raw data loaded by `utils.load_monkey_data`.
+
+        Returns
+        -------
+        env_data:
+            A dictionary containing discretized data, with keys:
+            - `num_steps`: int. Number of steps in the block.
+            - `pos`: (num_steps+1,) int array. Monkey position.
+            - `gaze`: (num_steps+1,) int array. Gaze position.
+            - `push`: (num_steps,) bool array. Whether the button is pushed.
+            - `success`: (num_steps,) bool array. Whether the food is obtained.
+            - `box`: (num_steps,) int array. Box index of the push, -1 if no
+                push is made.
+            - `colors`: (num_steps+1, num_boxes, mat_size, mat_size) int array.
+                Colors on the food boxes.
+
+        """
+        t = block_data['t']
+        num_steps = int(np.floor(t.max()/self.dt))
+
+        def get_trajectory(xyz):
+            xy = xyz[:, :2]/arena_radius
+            vals = []
+            for i in range(num_steps+1):
+                _xy = xy[(t>=i*self.dt)&(t<(i+1)*self.dt), :]
+                if np.all(np.isnan(_xy[:, 0])) or np.all(np.isnan(_xy[:, 1])):
+                    vals.append(-1) # data gap
+                else:
+                    _xy = np.nanmean(_xy, axis=0)
+                    vals.append(self.arena.nearest_tile(_xy))
+            vals = np.array(vals, dtype=int)
+            return vals
+
+        pos = get_trajectory(block_data['pos_xyz'])
+        gaze = get_trajectory(block_data['gaze_xyz'])
+
+        push_t, push_id = block_data['push_t'], block_data['push_id']
+        push, success, box = [], [], []
+        for i in range(1, num_steps+1):
+            push_idxs, = ((push_t>=(i-0.5)*self.dt)&(push_t<(i+0.5)*self.dt)).nonzero()
+            _push = push_id[push_idxs]
+            if len(np.unique(_push))>1:
+                print(f'multiple boxes pushed at step {i}')
+            push.append(len(_push)>0)
+            success.append(np.any(block_data['push_flag'][push_idxs]))
+            if len(_push)>0:
+                b_idx = (int(_push[-1])+1)%3
+                box.append(b_idx)
+                pos[i] = self.arena.boxes[b_idx]
+            else:
+                box.append(-1)
+        push = np.array(push, dtype=bool)
+        success = np.array(success, dtype=bool)
+
+        # actual colors are not provided in the raw data, will use uniform patch
+        # estimated from cumulative cue
+        colors = []
+        _color_size = int(self.boxes[0].num_patches**0.5)
+        for i in range(num_steps+1):
+            _cues = block_data['cues'][(t>=i*self.dt)&(t<(i+1)*self.dt), :].mean(axis=0)
+            _cues = np.floor(_cues*np.array([box.num_grades for box in self.boxes]))
+            colors.append(np.tile(_cues[:, None, None], (1, _color_size, _color_size)))
+        colors = np.array(colors, dtype=int)
+
+        env_data = {
+            'num_steps': num_steps,
+            'pos': pos, 'gaze': gaze,
+            'push': push, 'success': success, 'box': box,
+            'colors': colors,
+        }
+        return env_data
+
+    def extract_observation_and_action(self, env_data: dict) -> tuple[Array, Array]:
+        r"""Extract observation and action sequences.
+
+        Data gaps will be filled from previous frames. Colors of the boxes that
+        are not being looked at will be marked with `num_grades` to represent
+        'UNKNOWN'.
+
+        Args
+        ----
+        env_data:
+            Discretized data returned by `convert_experiment_data`.
+
+        Returns
+        -------
+        observations: (num_steps+1, observation_dim) int
+            Observations include monkey position and gaze, concatenated with all
+            colors of food boxes.
+        actions: (num_steps,) int
+            Actions by the monkey.
+
+        """
+        num_steps = env_data['num_steps']
+
+        observations = np.empty((num_steps+1, len(self.observation_space.nvec)), dtype=int)
+        for t in range(num_steps+1):
+            for i in range(2):
+                if i==0:
+                    vals = env_data['pos']
+                if i==1:
+                    vals = env_data['gaze']
+                if vals[t]>=0:
+                    observations[t, i] = vals[t]
+                else:
+                    if t>0:
+                        observations[t, i] = observations[t-1, i] # previous frame
+                    else:
+                        observations[t, i] = vals[(vals>=0).nonzero()[0].min()] # first valid frame
+            i = 2
+            for b_idx, box in enumerate(self.boxes):
+                if env_data['gaze'][t]==self.arena.boxes[b_idx]:
+                    colors = env_data['colors'][t, b_idx].reshape(-1)
+                else:
+                    colors = box.num_grades
+                observations[t, i:(i+box.num_patches)] = colors
+                i += box.num_patches
+
+        actions = np.empty((num_steps,), dtype=int)
+        for t in range(num_steps):
+            if env_data['push'][t]:
+                pos = self.arena.boxes[env_data['box'][t]]
+            else:
+                pos = observations[t+1, 0]
+            actions[t] = self.monkey.index_action(
+                env_data['push'][t], pos, observations[t+1, 1],
+            )
+        return observations, actions
 
     def play_episode(self,
         pos, gaze, colors, push, success,
