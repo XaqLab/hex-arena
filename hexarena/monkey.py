@@ -136,7 +136,7 @@ class Monkey:
             look = action%self.arena.num_tiles
         else:
             push = True
-            move = (action-self.arena.num_tiles**2)//self.arena.num_tiles
+            move = self.arena.boxes[(action-self.arena.num_tiles**2)//self.arena.num_tiles]
             look = (action-self.arena.num_tiles**2)%self.arena.num_tiles
         return push, move, look
 
