@@ -189,8 +189,8 @@ class ForagingEnv(Env):
 
         push_t, push_id = block_data['push_t'], block_data['push_id']
         push, success, box = [], [], []
-        for i in range(1, num_steps+1):
-            push_idxs, = ((push_t>=(i-0.5)*self.dt)&(push_t<(i+0.5)*self.dt)).nonzero()
+        for i in range(1, num_steps+1): # one step fewer than pos and gaze
+            push_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
             _push = push_id[push_idxs]
             if len(np.unique(_push))>1:
                 print(f'multiple boxes pushed at step {i}')
