@@ -46,7 +46,9 @@ class BaseFoodBox:
             `num_patches=16`, a 4*4 grid of integers will be used to represent
             the color pattern on the screen.
         sigma:
-            Parameter governing the noise of color cues, should be non-negative.
+            Parameter governing the noise of color cues, should be in [0, 0.5].
+            Color cues are drawn from a beta distribution of which the variance
+            is determined by sigma. See `render` for more details.
 
         """
         _rcParams = rcParams.get('box.BaseFoodBox._init_', {})
@@ -85,10 +87,11 @@ class BaseFoodBox:
 
     def render(self) -> None:
         r"""Renders color cues."""
-        p = np.full((self.mat_size, self.mat_size), fill_value=self.cue)
-        z = np.arctanh((p-0.5)*1.99)
-        z += self.rng.normal(0, self.sigma, z.shape)
-        p = (np.tanh(z)+1)/2
+        _cue = (self.cue*(self.num_grades-1)+0.5)/self.num_grades
+        p = self.rng.beta(
+            _cue/self.sigma, (1-_cue)/self.sigma,
+            size=(self.mat_size, self.mat_size),
+        )
         self.colors = np.floor(p*self.num_grades).astype(int)
 
     def _reset(self) -> None:
@@ -167,7 +170,7 @@ class StationaryBox(BaseFoodBox):
 
         # param: (tau, sigma)
         self.param_low = [0, 0]
-        self.param_high = [np.inf, np.inf]
+        self.param_high = [np.inf, 0.5]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
@@ -241,7 +244,7 @@ class RestorableBox(BaseFoodBox):
 
         # param: (theta_tau, change_rate, restore_ratio, jump_ratio, sigma)
         self.param_low = [0, 0, 0, 1, 0]
-        self.param_high = [np.inf, np.inf, 1, np.inf, np.inf]
+        self.param_high = [np.inf, np.inf, 1, np.inf, 0.5]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
