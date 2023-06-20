@@ -150,6 +150,7 @@ class Arena:
         cmap = plt.get_cmap(cmap)
         if vmax is None:
             vmax = np.array(heatmap).max()
+
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
         self.plot_tiles(ax)
