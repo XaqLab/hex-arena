@@ -66,7 +66,7 @@ class Arena:
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
-    def plot_map(self,
+    def render(self,
         ax: Axes,
     ) -> None:
         _anchors = np.array(self.anchors)

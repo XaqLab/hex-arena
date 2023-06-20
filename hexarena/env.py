@@ -324,7 +324,7 @@ class ForagingEnv(Env):
             figsize = (4.5, 4)
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.arena.plot_map(ax)
+        self.arena.render(ax)
 
         h_boxes = []
         for box in self.boxes:
@@ -423,13 +423,12 @@ class ForagingEnv(Env):
             vmax = np.array(heatmap).max()
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.arena.plot_map(ax)
+        self.arena.render(ax)
 
         _xy = np.stack([
             np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
         ])
-        vmax = heatmap.max()
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         for i in range(self.arena.num_tiles):
             xy = _xy+self.arena.anchors[i]
