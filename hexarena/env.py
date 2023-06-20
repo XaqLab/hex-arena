@@ -447,42 +447,33 @@ class ForagingEnv(Env):
         pos: Iterable[int], gaze: Iterable[int],
         figsize: tuple[float, float] = None,
     ):
-        _xy = np.stack([
-            np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
-            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-        ])
-        cmap = plt.get_cmap('YlOrBr')
-        for i in range(2):
-            if figsize is None:
-                figsize = (4.5, 4)
-            fig = plt.figure(figsize=figsize)
-            ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-            self.arena.plot_map(ax)
+        r""""Plots occupancy map of behavior.
 
-            if i==0:
-                val = pos
-                title = 'Monkey position'
-                fig_p = fig
-            if i==1:
-                val = gaze
-                title = 'Gaze position'
-                fig_g = fig
+        Args
+        ----
+        pos, gaze:
+            Integers for monkey position and gaze at each time step.
+        figsize:
+            Figure size for each heat map.
+
+        Returns
+        -------
+        fig_p, fig_g:
+            Heat map figure for position and gaze histogram respectively.
+
+        """
+        figs = []
+        for val, title in zip(
+            [pos, gaze], ['Monkey position', 'Monkey gaze']
+        ):
             counts = np.zeros(self.arena.num_tiles)
             for j in range(self.arena.num_tiles):
                 counts[j] = (np.array(val)==j).sum()
-            norm = mpl.colors.Normalize(vmin=0, vmax=counts.max()/counts.sum())
-            for j in range(self.arena.num_tiles):
-                xy = _xy+self.arena.anchors[j]
-                ax.add_patch(Polygon(
-                    xy, edgecolor='none', facecolor=cmap(counts[j]/counts.max()), zorder=-1,
-                ))
-            plt.colorbar(
-                mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-                ax=ax, fraction=0.1, shrink=0.8, pad=0.1,
-                orientation='horizontal', label='Probability',
-            )
-
+            ps = counts/counts.sum()
+            fig, ax = self.plot_heatmap(ps, figsize, clabel='Probability')
             ax.set_title(title)
+            figs.append(fig)
+        fig_p, fig_g = figs
         return fig_p, fig_g
 
     def food_probs(self,
