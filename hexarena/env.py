@@ -324,7 +324,7 @@ class ForagingEnv(Env):
             figsize = (4.5, 4)
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.arena.render(ax)
+        self.arena.plot_tiles(ax)
 
         h_boxes = []
         for box in self.boxes:
@@ -385,63 +385,6 @@ class ForagingEnv(Env):
         ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
         return fig, ani
 
-    def plot_heatmap(self,
-        heatmap: Collection[float],
-        figsize: tuple[float, float] = None,
-        cmap: str = 'YlOrBr',
-        vmin: float = 0,
-        vmax: Optional[float] = None,
-        clabel: str = '',
-    ):
-        r"""Plots heat map over the arena.
-
-        Args
-        ----
-        heatmap: (num_tiles,)
-            An array containing non-negative values for each tile.
-        figsize:
-            Figure size.
-        cmap:
-            Color map string.
-        vmin, vmax:
-            Min and max value for color map.
-        clabel:
-            Color bar label.
-
-        Returns
-        -------
-        fig, ax:
-            Figure and axis handle.
-
-        """
-        assert len(heatmap)==self.arena.num_tiles
-        assert np.all(np.array(heatmap)>=0)
-        if figsize is None:
-            figsize = (4.5, 4)
-        cmap = plt.get_cmap(cmap)
-        if vmax is None:
-            vmax = np.array(heatmap).max()
-        fig = plt.figure(figsize=figsize)
-        ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.arena.render(ax)
-
-        _xy = np.stack([
-            np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
-            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-        ])
-        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-        for i in range(self.arena.num_tiles):
-            xy = _xy+self.arena.anchors[i]
-            ax.add_patch(Polygon(
-                xy, edgecolor='none', facecolor=cmap(norm(heatmap[i])), zorder=-1,
-            ))
-        plt.colorbar(
-            mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-            ax=ax, fraction=0.1, shrink=0.8, pad=0.1,
-            orientation='horizontal', label=clabel,
-        )
-        return fig, ax
-
     def plot_occupancy(self,
         pos: Iterable[int], gaze: Iterable[int],
         figsize: tuple[float, float] = None,
@@ -466,10 +409,10 @@ class ForagingEnv(Env):
             [pos, gaze], ['Monkey position', 'Monkey gaze']
         ):
             counts = np.zeros(self.arena.num_tiles)
-            for j in range(self.arena.num_tiles):
-                counts[j] = (np.array(val)==j).sum()
+            for i in range(self.arena.num_tiles):
+                counts[i] = (np.array(val)==i).sum()
             ps = counts/counts.sum()
-            fig, ax = self.plot_heatmap(ps, figsize, clabel='Probability')
+            fig, ax = self.arena.plot_heatmap(ps, figsize, clabel='Probability')
             ax.set_title(title)
             figs.append(fig)
         fig_p, fig_g = figs
