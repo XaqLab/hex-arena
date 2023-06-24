@@ -107,8 +107,8 @@ class ForagingEnv(Env):
             idx += state_dim
 
     def reset(self, seed: Optional[int] = None) -> tuple[Observation, dict]:
-        for x in self._components():
-            x.reset(seed)
+        for i, x in enumerate(self._components()):
+            x.reset(seed+i)
         observation = self._get_observation()
         info = self._get_info()
         return observation, info
