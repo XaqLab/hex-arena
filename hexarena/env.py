@@ -108,7 +108,7 @@ class ForagingEnv(Env):
 
     def reset(self, seed: Optional[int] = None) -> tuple[Observation, dict]:
         for i, x in enumerate(self._components()):
-            x.reset(seed+i)
+            x.reset(seed if seed is None else seed+i)
         observation = self._get_observation()
         info = self._get_info()
         return observation, info
