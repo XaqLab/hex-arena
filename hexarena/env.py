@@ -5,7 +5,7 @@ from gym.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 from matplotlib.animation import FuncAnimation
 
 from typing import Optional
@@ -16,7 +16,10 @@ from . import rcParams
 from .arena import Arena
 from .box import BaseFoodBox
 from .monkey import Monkey
-from .alias import EnvParam, Observation, State, Figure, Array
+from .alias import (
+    EnvParam, Observation, State,
+    Figure, Axes, Artist, Array,
+)
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -41,13 +44,13 @@ class ForagingEnv(Env):
         monkey._target_ = 'hexarena.monkey.Monkey'
         self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
-        num_boxes = self.arena.num_boxes
+        self.num_boxes = self.arena.num_boxes
         if boxes is None:
-            boxes = [None]*num_boxes
+            boxes = [None]*self.num_boxes
         else:
-            assert len(boxes)==num_boxes
+            assert len(boxes)==self.num_boxes
         self.boxes: list[BaseFoodBox] = []
-        for i in range(num_boxes):
+        for i in range(self.num_boxes):
             box = Config(boxes[i])
             if '_target_' not in box:
                 box._target_ = _rcParams.box
@@ -66,8 +69,9 @@ class ForagingEnv(Env):
         # state: (*monkey_state, *boxes_state)
         self._state_dims, nvec = [], []
         for x in self._components():
-            self._state_dims.append(len(x.state_space.nvec))
-            nvec += [*x.state_space.nvec]
+            _nvec = x.state_space.nvec
+            self._state_dims.append(len(_nvec))
+            nvec += [*_nvec]
         self.state_space = MultiDiscrete(nvec)
         # observation: (*monkey_state, *boxes_colors)
         nvec = [*self.monkey.state_space.nvec]
@@ -77,7 +81,8 @@ class ForagingEnv(Env):
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
 
-    def _components(self):
+    def _components(self) -> list:
+        r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes
 
     def get_param(self) -> EnvParam:
@@ -95,12 +100,14 @@ class ForagingEnv(Env):
             idx += param_dim
 
     def get_state(self) -> State:
+        r"""Returns environment state."""
         state = tuple()
         for x in self._components():
             state += tuple([*x.get_state()])
         return state
 
     def set_state(self, state: State) -> None:
+        r"""Sets environment state."""
         idx = 0
         for x, state_dim in zip(self._components(), self._state_dims):
             x.set_state([state[i] for i in range(idx, idx+state_dim)])
@@ -108,7 +115,7 @@ class ForagingEnv(Env):
 
     def reset(self, seed: Optional[int] = None) -> tuple[Observation, dict]:
         for i, x in enumerate(self._components()):
-            x.reset(seed if seed is None else seed+i)
+            x.reset(None if seed is None else seed+i)
         observation = self._get_observation()
         info = self._get_info()
         return observation, info
@@ -124,6 +131,13 @@ class ForagingEnv(Env):
         return observation, reward, terminated, truncated, info
 
     def _get_observation(self) -> Observation:
+        r"""Returns observation.
+
+        The monkey has full knowledge of its own state, and only the box where
+        the gaze is located gives valid color cues. Colors of other boxes are
+        set to a constant `box.num_patches` to represent 'UNKNOWN'.
+
+        """
         observation = tuple([*self.monkey.get_state()])
         for box in self.boxes:
             if self.monkey.gaze==box.pos:
@@ -134,6 +148,7 @@ class ForagingEnv(Env):
         return observation
 
     def _get_info(self) -> dict:
+        r"""Returns information about environment."""
         info = {
             'pos': self.monkey.pos, 'gaze': self.monkey.gaze,
             'foods': [box.food for box in self.boxes],
@@ -152,6 +167,8 @@ class ForagingEnv(Env):
         ----
         block_data:
             One block of raw data loaded by `utils.load_monkey_data`.
+        arena_radius:
+            Radius of the arena, (possibly) in mm.
 
         Returns
         -------
@@ -205,8 +222,8 @@ class ForagingEnv(Env):
         push = np.array(push, dtype=bool)
         success = np.array(success, dtype=bool)
 
-        # actual colors are not provided in the raw data, will use uniform patch
-        # estimated from cumulative cue
+        # actual colors are not provided in the raw data, will use a uniform
+        # patch estimated from the cumulative cue
         colors = []
         _color_size = int(self.boxes[0].num_patches**0.5)
         for i in range(num_steps+1):
@@ -255,7 +272,7 @@ class ForagingEnv(Env):
                     vals = env_data['gaze']
                 if vals[t]>=0:
                     observations[t, i] = vals[t]
-                else:
+                else: # deal with data gap
                     if t>0:
                         observations[t, i] = observations[t-1, i] # previous frame
                     else:
@@ -279,6 +296,88 @@ class ForagingEnv(Env):
                 env_data['push'][t], pos, observations[t+1, 1],
             )
         return observations, actions
+
+    def plot_e_view(self,
+        ax: Axes,
+        pos: int, gaze: int, rewarded: Optional[bool],
+        foods: Optional[Array], colors: Optional[Array],
+        artists: Optional[list[Artist]] = None,
+    ) -> list[Artist]:
+        r"""Plots experimenter view of one step.
+
+        Monkey position, monkey gaze, food status and color cues will be plotted
+        for one step.
+
+        Args
+        ----
+        ax:
+            Axis to plot figure.
+        pos, gaze:
+            Monkey position and gaze.
+        rewarded:
+            Whether a reward was just obtained. If ``True``, the position tile
+            will be colored red. If ``False``, the position tile will be colored
+            blue.
+        foods: (num_boxes,)
+            Bool array of food status in each box.
+        colors: (num_boxes, mat_size, mat_size)
+            Int array of color cues of each box.
+        artists:
+            Artist of objects to render. If not ``None``, properties of each
+            artist will be updated accordingly.
+
+        Returns
+        -------
+        artists:
+            A list of artists, including:
+            - A patch for monkey position,
+            - A marker for monkey gaze,
+            - A line for food status.
+            - Images for color cues.
+
+        """
+        if rewarded is None:
+            tile_color = 'yellow'
+        else:
+            tile_color = 'red' if rewarded else 'blue'
+        if foods is None:
+            foods_color = ['none']*self.num_boxes
+        else:
+            foods_color = ['red' if food else 'blue' for food in foods]
+        if colors is None:
+            colors = np.full((self.num_boxes, 1, 1), np.nan)
+        if artists is None:
+            h_pos = self.arena.plot_tile(ax, pos, tile_color)
+            h_pos.set_alpha(0.4)
+            h_gaze = ax.scatter(
+                *self.arena.anchors[gaze], s=100,
+                marker='o', edgecolor='none', facecolor='blue',
+            )
+            h_foods, h_boxes = [], []
+            for i, box in enumerate(self.boxes):
+                x, y = np.array(self.arena.anchors[box.pos])*1.5
+                s = 0.2
+                h_food, = ax.plot(
+                    [x-s, x+s], [y+1.2*s, y+1.2*s],
+                    color=foods_color[i], linewidth=2, zorder=2,
+                )
+                h_foods.append(h_food)
+                h_box = ax.imshow(
+                    colors[i], extent=[x-s, x+s, y-s, y+s], cmap='RdYlBu_r',
+                    vmin=-1, vmax=box.num_grades, zorder=2,
+                )
+                h_boxes.append(h_box)
+        else:
+            h_pos, h_gaze = artists[:2]
+            h_foods = artists[2:(2+self.num_boxes)]
+            h_boxes = artists[(2+self.num_boxes):(2+2*self.num_boxes)]
+            self.arena.plot_tile(ax, pos, tile_color, h_pos)
+            h_gaze.set_offsets(self.arena.anchors[gaze])
+            for i in range(self.num_boxes):
+                h_foods[i].set_color(foods_color[i])
+                h_boxes[i].set_data(colors[i])
+        artists = [h_pos, h_gaze]+h_foods+h_boxes
+        return artists
 
     def play_episode(self,
         pos, gaze, colors, push, success,
@@ -324,7 +423,7 @@ class ForagingEnv(Env):
             figsize = (4.5, 4)
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.arena.plot_tiles(ax)
+        self.arena.plot_mesh(ax)
 
         h_boxes = []
         for box in self.boxes:
@@ -473,7 +572,7 @@ class ForagingEnv(Env):
             Object handle for the figure and animation.
 
         """
-        assert self.arena.num_boxes==3, "Only implemented for three boxes."
+        assert self.num_boxes==3, "Only implemented for three boxes."
         if figsize is None:
             figsize = (6, 2.5)
         fig = plt.figure(figsize=figsize)
