@@ -11,6 +11,7 @@ from matplotlib.animation import FuncAnimation
 from typing import Optional
 from collections.abc import Collection, Iterable
 from irc.distribution import BaseDistribution
+from irc.buffer import Episode
 
 from . import rcParams
 from .arena import Arena
@@ -297,10 +298,66 @@ class ForagingEnv(Env):
             )
         return observations, actions
 
+    def convert_episode_data(self,
+        episode: Episode,
+    ) -> tuple[Array, Array, list[Optional[bool]]]:
+        r"""Converts episode data to interpretable variables.
+
+        Args
+        ----
+        episode:
+            An episode returned by a BeliefAgent, e.g. `episode =
+            agent.run_one_episode(...)`. 'infos' is needed to fully prepare the
+            data.
+
+        Returns
+        -------
+        pos, gaze: (num_steps+1,)
+            Integer arrays for monkey position and gaze.
+        rewarded: (num_steps+1,)
+            Whether the agent is rewarded. See `plot_e_view` for more details.
+        foods: (num_steps+1, num_boxes)
+            Bool arrays for food status.
+        colors: (num_steps+1, num_boxes, mat_size, mat_size)
+            Integer arrays for color cues. All boxes regardless of the monkey
+            gaze are prepared.
+        counts: (num_steps+1, num_boxes, 2)
+            Successful and total push counts of each box.
+
+        """
+        assert episode.infos is not None, "Need 'infos' to extract colors of all boxes."
+        pos, gaze, rewarded, foods, colors, counts = [], [], [], [], [], []
+        counts_t = np.zeros((self.num_boxes, 2))
+        for t, info in enumerate(episode.infos):
+            pos.append(info['pos'])
+            gaze.append(info['gaze'])
+            if t==0:
+                rewarded.append(None)
+            else:
+                push, move, _ = self.monkey.convert_action(episode.actions[t-1])
+                if push:
+                    success = episode.rewards[t-1]>0
+                    b_idx = self.arena.boxes.index(move)
+                    rewarded.append(success)
+                    counts_t[b_idx, 0] += int(success)
+                    counts_t[b_idx, 1] += 1
+                else:
+                    rewarded.append(None)
+            foods.append(info['foods'])
+            colors.append(info['colors'])
+            counts.append(counts_t.copy())
+        pos = np.array(pos).astype(int)
+        gaze = np.array(gaze).astype(int)
+        foods = np.array(foods).astype(bool)
+        colors = np.array(colors).astype(int)
+        counts = np.stack(counts).astype(int)
+        return pos, gaze, rewarded, foods, colors, counts
+
     def plot_e_view(self,
         ax: Axes,
         pos: int, gaze: int, rewarded: Optional[bool],
         foods: Optional[Array], colors: Optional[Array],
+        counts: Optional[Array],
         artists: Optional[list[Artist]] = None,
     ) -> list[Artist]:
         r"""Plots experimenter view of one step.
@@ -322,6 +379,9 @@ class ForagingEnv(Env):
             Bool array of food status in each box.
         colors: (num_boxes, mat_size, mat_size)
             Int array of color cues of each box.
+        counts: (num_boxes, 2)
+            Push counts since the beginning of the episode. Two numbers in each
+            row are counts of successful pushes and total pushes.
         artists:
             Artist of objects to render. If not ``None``, properties of each
             artist will be updated accordingly.
@@ -332,8 +392,9 @@ class ForagingEnv(Env):
             A list of artists, including:
             - A patch for monkey position,
             - A marker for monkey gaze,
-            - A line for food status.
+            - Lines for food status.
             - Images for color cues.
+            - Texts for push counts.
 
         """
         if rewarded is None:
@@ -346,6 +407,10 @@ class ForagingEnv(Env):
             foods_color = ['red' if food else 'blue' for food in foods]
         if colors is None:
             colors = np.full((self.num_boxes, 1, 1), np.nan)
+        if counts is None:
+            texts = ['']*self.num_boxes
+        else:
+            texts = ['{}/{}'.format(*count) for count in counts]
         if artists is None:
             h_pos = self.arena.plot_tile(ax, pos, tile_color)
             h_pos.set_alpha(0.4)
@@ -353,7 +418,7 @@ class ForagingEnv(Env):
                 *self.arena.anchors[gaze], s=100,
                 marker='o', edgecolor='none', facecolor='blue',
             )
-            h_foods, h_boxes = [], []
+            h_foods, h_boxes, h_counts = [], [], []
             for i, box in enumerate(self.boxes):
                 x, y = np.array(self.arena.anchors[box.pos])*1.5
                 s = 0.2
@@ -367,41 +432,41 @@ class ForagingEnv(Env):
                     vmin=-1, vmax=box.num_grades, zorder=2,
                 )
                 h_boxes.append(h_box)
+                h_count = ax.text(
+                    x, y+np.sign(y)*1.8*s, texts[i],
+                    ha='center', va='center',
+                )
+                h_counts.append(h_count)
         else:
             h_pos, h_gaze = artists[:2]
             h_foods = artists[2:(2+self.num_boxes)]
             h_boxes = artists[(2+self.num_boxes):(2+2*self.num_boxes)]
+            h_counts = artists[(2+2*self.num_boxes):(2+3*self.num_boxes)]
             self.arena.plot_tile(ax, pos, tile_color, h_pos)
             h_gaze.set_offsets(self.arena.anchors[gaze])
             for i in range(self.num_boxes):
                 h_foods[i].set_color(foods_color[i])
                 h_boxes[i].set_data(colors[i])
-        artists = [h_pos, h_gaze]+h_foods+h_boxes
+                h_counts[i].set_text(texts[i])
+        artists = [h_pos, h_gaze]+h_foods+h_boxes+h_counts
         return artists
 
-    def play_episode(self,
-        pos, gaze, colors, push, success,
-        num_steps: Optional[int] = None,
+    def play_e_view(self,
+        pos, gaze, rewarded=None, foods=None, colors=None, counts=None,
+        tmin: Optional[int] = None,
+        tmax: Optional[int] = None,
         figsize: tuple[float, float] = None,
         use_sec: bool = True,
-    ) -> tuple[Figure, FuncAnimation]:
-        r"""Creates animation of one episode game play.
+    ):
+        r"""Creates animation of experimenter view.
 
         Args
         ----
-        pos: int array of (num_steps+1,)
-            Tile index of monkey positions.
-        gaze: int array of (num_steps+1,)
-            Tile index of monkey gazes.
-        colors: int array of (num_steps+1, num_boxes, mat_size, mat_size)
-            Colors shown on all boxes, in range [0, num_grades).
-        push: bool array of (num_steps,)
-            Whether the button is pushed.
-        success: bool array of (num_steps,)
-            Whether the food is delivered.
-        num_steps:
-            Number of steps to show from the start, can be shorter than
-            `len(push)`.
+        pos, gaze, rewarded, foods, colors, counts:
+            Variables typically returned by `convert_episode_data`, covering
+            time step interval [0, num_steps].
+        tmin, tmax:
+            Time index range to visualize.
         figsize:
             Figure size.
         use_sec:
@@ -411,77 +476,40 @@ class ForagingEnv(Env):
         Returns
         -------
         fig, ani:
-            Object handle for the figure and animation.
+            Object of the figure and animation.
 
         """
-        assert len(self.boxes)==3, "Only implemented for three boxes."
-        if num_steps is None:
-            num_steps = len(push)
-        else:
-            num_steps = min(num_steps, len(push))
+        assert len(pos)==len(gaze)
+        rewarded = [None]*len(pos) if rewarded is None else rewarded
+        foods = [None]*len(pos) if foods is None else foods
+        colors = [None]*len(pos) if colors is None else colors
+        counts = [None]*len(pos) if counts is None else counts
+        tmin = 0 if tmin is None else tmin
+        tmax = len(pos) if tmax is None else tmax
         if figsize is None:
             figsize = (4.5, 4)
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
         self.arena.plot_mesh(ax)
-
-        h_boxes = []
-        for box in self.boxes:
-            _colors = np.zeros((box.mat_size, box.mat_size), dtype=int)
-            _x, _y = np.array(self.arena.anchors[box.pos])*1.5
-            _s = 0.2
-            h_box = ax.imshow(
-                _colors, extent=[_x-_s, _x+_s, _y-_s, _y+_s],
-                vmin=-1, vmax=box.num_grades, cmap='RdYlBu_r',
-                zorder=2,
-            )
-            h_boxes.append(h_box)
-        h_counts = [
-            ax.text(9/8, 0.93, '0/0', ha='center'),
-            ax.text(-9/8, 0.93, '0/0', ha='center'),
-            ax.text(0, -1.69, '0/0', ha='center'),
-        ]
         ax.set_xlim([-1.5, 1.5])
-        ax.set_ylim([-1.5, 1.2])
-        h_pos = ax.add_patch(Polygon(
-            np.full((1, 2), fill_value=np.nan),
-            edgecolor='none', facecolor='yellow', alpha=0.2,
-        ))
-        h_gaze = ax.scatter(np.nan, np.nan, s=100, marker='o', edgecolor='none', facecolor='blue')
+        ax.set_ylim([-1.6, 1.2])
+        artists = self.plot_e_view(
+            ax, pos[0], gaze[0], rewarded[0], foods[0], colors[0], counts[0],
+        )
         h_title = ax.set_title('')
 
-        _xy = np.stack([
-            np.array([np.cos(theta), np.sin(theta)])/(2*self.arena.resol)
-            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-        ])
-        counts = [(0, 0)]*3
-        def update(t):
-            for i, h_box in enumerate(h_boxes):
-                h_box.set_data(colors[t, i])
-            _pos = pos[t]
-            h_pos.set_xy(_xy+self.arena.anchors[_pos])
-            if t>0 and _pos in self.arena.boxes and push[t-1]:
-                b_idx = self.arena.boxes.index(_pos)
-                _success, _total = counts[b_idx]
-                if success[t-1]:
-                    _success += 1
-                _total += 1
-                counts[b_idx] = (_success, _total)
-                h_counts[b_idx].set_text('{}/{}'.format(*counts[b_idx]))
-
-                if success[t-1]:
-                    h_pos.set_facecolor('darkred')
-                else:
-                    h_pos.set_facecolor('darkblue')
-            else:
-                h_pos.set_facecolor('yellow')
-            h_gaze.set_offsets(self.arena.anchors[gaze[t]])
+        def update(t, artists):
+            artists = self.plot_e_view(
+                ax, pos[t], gaze[t], rewarded[t],
+                foods[t], colors[t], counts[t], artists,
+            )
             h_title.set_text(r'$t$='+'{}'.format(
                 '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
             ))
-            return *h_boxes, h_pos, h_gaze, *h_counts, h_title
-
-        ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
+            return *artists, h_title
+        ani = FuncAnimation(
+            fig, update, fargs=(artists,), frames=range(tmin, tmax), blit=True,
+        )
         return fig, ani
 
     def plot_occupancy(self,
