@@ -7,7 +7,7 @@ from typing import Optional
 from collections.abc import Collection
 
 from . import rcParams
-from .alias import Axes
+from .alias import Axes, Artist
 
 
 class Arena:
@@ -69,7 +69,7 @@ class Arena:
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
-    def plot_tiles(self,
+    def plot_mesh(self,
         ax: Axes,
     ) -> None:
         _anchors = np.array(self.anchors)
@@ -83,8 +83,8 @@ class Arena:
             s=40, marker='X', color='yellow',
         )
         ax.scatter(
-            _anchors[self.boxes, 0], _anchors[self.boxes, 1],
-            s=120, marker='o', facecolors='none', edgecolors='red', linewidths=2,
+            _anchors[self.boxes, 0], _anchors[self.boxes, 1], s=120,
+            marker='o', facecolors='none', edgecolors='red', linewidths=2,
         )
 
         def append_seg(x, y, theta):
@@ -113,6 +113,27 @@ class Arena:
         ax.set_ylim([-1.1, 1.1])
         ax.set_aspect('equal')
         ax.set_axis_off()
+
+    def plot_tile(self,
+        ax: Axes,
+        tile_idx: Optional[int], color = 'none',
+        h_tile: Optional[Artist] = None,
+    ) -> Artist:
+        if tile_idx is None:
+            xy = np.full((1, 2), fill_value=np.nan)
+        else:
+            xy = np.stack([
+                np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
+                for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
+            ])+self.anchors[tile_idx]
+        if h_tile is None:
+            h_tile = ax.add_patch(Polygon(
+                xy, edgecolor='none', facecolor=color, zorder=-1,
+            ))
+        else:
+            h_tile.set_xy(xy)
+            h_tile.set_facecolor(color)
+        return h_tile
 
     def plot_heatmap(self,
         heatmap: Collection[float],
@@ -153,7 +174,7 @@ class Arena:
 
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        self.plot_tiles(ax)
+        self.plot_mesh(ax)
 
         _xy = np.stack([
             np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
