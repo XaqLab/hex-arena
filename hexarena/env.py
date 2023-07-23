@@ -10,7 +10,7 @@ from matplotlib.animation import FuncAnimation
 
 from typing import Optional
 from collections.abc import Collection, Iterable
-from irc.distribution import BaseDistribution
+from irc.distribution import BaseDistribution, CompositeDistribution
 from irc.buffer import Episode
 
 from . import rcParams
@@ -19,7 +19,7 @@ from .box import BaseFoodBox
 from .monkey import Monkey
 from .alias import (
     EnvParam, Observation, State,
-    Figure, Axes, Artist, Array,
+    Figure, Axes, Artist, Array, Tensor,
 )
 
 class ForagingEnv(Env):
@@ -507,6 +507,163 @@ class ForagingEnv(Env):
                 '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
             ))
             return *artists, h_title
+        ani = FuncAnimation(
+            fig, update, fargs=(artists,), frames=range(tmin, tmax), blit=True,
+        )
+        return fig, ani
+
+    def convert_beliefs(self,
+        p_s: CompositeDistribution,
+        beliefs: Tensor,
+    ):
+        assert isinstance(p_s, CompositeDistribution)
+        d_sets = [[0], [1]]+[[2*i+2, 2*i+3] for i in range(self.num_boxes)]
+        assert p_s.d_sets==d_sets
+        p_boxes = []
+        for k in range(2+self.num_boxes):
+            dist = p_s.s_dists[k]
+            ps = []
+            for belief in beliefs:
+                param_vec = p_s.set_param_vec(k, belief)
+                ps.append(dist.loglikelihoods(dist.all_xs, param_vec).exp())
+            ps = torch.stack(ps).data.cpu().numpy()
+            if k==0:
+                p_pos = ps
+            elif k==1:
+                p_gaze = ps
+            else:
+                p_boxes.append(ps.reshape(len(beliefs), 2, -1))
+        p_boxes = np.stack(p_boxes, axis=1)
+        return p_pos, p_gaze, p_boxes
+
+    def plot_a_view(self,
+        ax_pos: Axes, p_pos: Array,
+        ax_gaze: Axes, p_gaze: Array,
+        axes_boxes: Collection[Axes], p_boxes: Array,
+        kwargs_pos: Optional[dict] = None,
+        kwargs_gaze: Optional[dict] = None,
+        kwargs_box: Optional[dict] = None,
+        artists: Optional[list[Artist]] = None,
+    ) -> list[Artist]:
+        r"""Plots agent view of one step.
+
+        Args
+        ----
+        ax_pos, ax_gaze:
+            Axis to plot `p_pos` and `p_gaze` respectively.
+        p_pos, p_gaze: (num_tiles,)
+            Probability distribution of monkey position and gaze.
+        ax_boxes:
+            Axes to plot `p_boxes`.
+        p_boxes: (num_boxes, 2, num_levels)
+            Joint probability of food status and cue level for each box.
+        kwargs_pos, kwargs_gaze:
+            Keyword arguments passed to `plot_map` for `p_pos` and `p_gaze`.
+        kwargs_box:
+            Keyword arguments for plotting box beliefs.
+
+        """
+        assert len(p_pos)==self.arena.num_tiles
+        assert len(p_gaze)==self.arena.num_tiles
+        assert len(axes_boxes)==self.num_boxes
+        kwargs_pos = Config(kwargs_pos)
+        kwargs_gaze = Config(kwargs_gaze)
+        kwargs_box = Config(kwargs_box)
+        kwargs_box.fill({
+            'origin': 'lower', 'vmin': 0, 'vmax': p_boxes.max(), 'cmap': 'Reds',
+        })
+        if artists is None:
+            h_pos = self.arena.plot_map(ax_pos, p_pos, clabel='$P_\mathrm{position}$', **kwargs_pos)
+            h_gaze = self.arena.plot_map(ax_gaze, p_gaze, clabel='$P_\mathrm{gaze}$', **kwargs_gaze)
+            h_boxes = []
+            for i in range(self.num_boxes):
+                ax = axes_boxes[i]
+                h_boxes.append(ax.imshow(
+                    p_boxes[i].T, aspect=2.5/self.boxes[i].num_levels, **kwargs_box,
+                ))
+                ax.set_xticks([0, 1])
+                ax.set_xticklabels(['F', 'T'])
+                ax.set_yticks([0, self.boxes[i].num_levels-1])
+                if i==0:
+                    ax.set_ylabel('Box cue', labelpad=-10)
+                    ax.set_yticklabels(['min', 'max'])
+                else:
+                    ax.set_yticklabels([])
+                ax.set_title('Box {}'.format(i+1))
+            artists = h_pos+h_gaze+h_boxes
+        else:
+            n = self.arena.num_tiles
+            h_pos = artists[:n]
+            self.arena.plot_map(ax_pos, p_pos, h_tiles=h_pos)
+            h_gaze = artists[n:2*n]
+            self.arena.plot_map(ax_gaze, p_gaze, h_tiles=h_gaze)
+            h_boxes = artists[2*n:2*n+self.num_boxes]
+            for i in range(self.num_boxes):
+                h_boxes[i].set_data(p_boxes[i].T)
+        return artists
+
+    def play_a_view(self,
+        p_pos, p_gaze, p_boxes,
+        tmin: Optional[int] = None,
+        tmax: Optional[int] = None,
+        figsize = None,
+        use_sec: bool = True,
+    ):
+        r"""Creates animation of agent view.
+
+        Args
+        ----
+        p_pos, p_gaze, p_boxes:
+            Variables typically returned by `convert_beliefs`, covering
+            time step interval [0, num_steps].
+        tmin, tmax:
+            Time index range to visualize.
+        figsize:
+            Figure size.
+        use_sec:
+            Whether to use seconds as time units. If ``False``, will use time
+            steps as units.
+
+        Returns
+        -------
+        fig, ani:
+            Object of the figure and animation.
+
+        """
+        tmin = 0 if tmin is None else tmin
+        tmax = len(p_pos) if tmax is None else tmax
+        if figsize is None:
+            figsize = (7, 6)
+        fig = plt.figure(figsize=figsize)
+        ax_pos = fig.add_axes([0.05, 0.05, 0.44, 0.55])
+        ax_gaze = fig.add_axes([0.51, 0.05, 0.44, 0.55])
+
+        n = self.num_boxes
+        gap = 0.02
+        width = (0.8-(n-1)*gap)/n
+        axes_boxes = []
+        for i in range(n):
+            axes_boxes.append(fig.add_axes([0.15+i*(width+gap), 0.65, width, 0.25]))
+
+        artists = self.plot_a_view(
+            ax_pos, p_pos[0], ax_gaze, p_gaze[0], axes_boxes, p_boxes[0],
+            kwargs_pos={'vmax': p_pos.max()}, kwargs_gaze={'vmax': p_gaze.max()},
+            kwargs_box={'vmax': p_boxes.max()},
+        )
+        plt.colorbar(artists[-1], ax=axes_boxes, fraction=1/8, label='$P_\mathrm{box}$')
+        _ax = fig.add_axes([0.05, 0.9, 0.1, 0]) # dummy axis since fig.text doesn't work
+        _ax.axis('off')
+        h_time = _ax.set_title('', fontsize='small')
+
+        def update(t, artists):
+            artists = self.plot_a_view(
+                ax_pos, p_pos[t], ax_gaze, p_gaze[t],
+                axes_boxes, p_boxes[t], artists=artists,
+            )
+            h_time.set_text(r'$t$='+'{}'.format(
+                '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
+            ))
+            return *artists, h_time
         ani = FuncAnimation(
             fig, update, fargs=(artists,), frames=range(tmin, tmax), blit=True,
         )

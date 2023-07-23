@@ -135,13 +135,14 @@ class Arena:
             h_tile.set_facecolor(color)
         return h_tile
 
-    def plot_heatmap(self,
-        heatmap: Collection[float],
-        figsize: tuple[float, float] = None,
+    def plot_map(self,
+        ax: Axes,
+        vals: Collection[float],
         cmap: str = 'YlOrBr',
         vmin: float = 0,
         vmax: Optional[float] = None,
         clabel: str = '',
+        h_tiles: Optional[list[Artist]] = None,
     ):
         r"""Plots heat map over the arena.
 
@@ -164,34 +165,28 @@ class Arena:
             Figure and axis handle.
 
         """
-        assert len(heatmap)==self.num_tiles
-        assert np.all(np.array(heatmap)>=0)
-        if figsize is None:
-            figsize = (4.5, 4)
+        vals = np.array(vals)
+        assert len(vals)==self.num_tiles
+        assert np.all(vals>=0)
         cmap = plt.get_cmap(cmap)
         if vmax is None:
-            vmax = np.array(heatmap).max()
-
-        fig = plt.figure(figsize=figsize)
-        ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
+            vmax = vals.max()
         self.plot_mesh(ax)
-
-        _xy = np.stack([
-            np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
-            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-        ])
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-        for i in range(self.num_tiles):
-            xy = _xy+self.anchors[i]
-            ax.add_patch(Polygon(
-                xy, edgecolor='none', facecolor=cmap(norm(heatmap[i])), zorder=-1,
-            ))
-        plt.colorbar(
-            mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-            ax=ax, fraction=0.1, shrink=0.8, pad=0.1,
-            orientation='horizontal', label=clabel,
-        )
-        return fig, ax
+        if h_tiles is None:
+            h_tiles = []
+            for i in range(self.num_tiles):
+                h_tiles.append(self.plot_tile(ax, i, cmap(norm(vals[i]))))
+            plt.colorbar(
+                mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+                ax=ax, fraction=0.1, shrink=0.8, pad=0.05,
+                orientation='horizontal', label=clabel,
+            )
+        else:
+            assert len(h_tiles)==self.num_tiles
+            for i in range(self.num_tiles):
+                self.plot_tile(ax, i, cmap(norm(vals[i])), h_tile=h_tiles[i])
+        return h_tiles
 
     def is_inside(self,
         xy: tuple[float, float],
