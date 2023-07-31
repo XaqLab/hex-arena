@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-from gym import Env
-from gym.spaces import Discrete, MultiDiscrete
+from gymnasium import Env
+from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 import matplotlib as mpl
 import matplotlib.pyplot as plt

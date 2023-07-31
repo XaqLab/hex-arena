@@ -3,7 +3,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from scipy import stats
-from gym.spaces import MultiDiscrete
+from gymnasium.spaces import MultiDiscrete
 from jarvis.config import Config
 
 from typing import Optional
