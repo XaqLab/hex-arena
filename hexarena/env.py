@@ -570,7 +570,7 @@ class ForagingEnv(Env):
         if p_boxes is not None:
             assert len(p_boxes)==len(pos)
         tmin = 0 if tmin is None else tmin
-        tmax = len(pos) if tmax is None else tmax
+        tmax = len(pos)+1 if tmax is None else tmax
         if figsize is None:
             figsize = (4.5, 4) if p_boxes is None else (7.5, 4)
         fig = plt.figure(figsize=figsize)
@@ -583,7 +583,7 @@ class ForagingEnv(Env):
         ax.set_xlim([-1.5, 1.5])
         ax.set_ylim([-1.6, 1.2])
         artists_a = self.plot_arena(
-            ax, pos[0], gaze[0], rewarded[0], foods[0], colors[0], counts[0],
+            ax, pos[tmin], gaze[tmin], rewarded[tmin], foods[tmin], colors[tmin], counts[tmin],
         )
         h_title = ax.set_title('')
 
@@ -596,7 +596,9 @@ class ForagingEnv(Env):
             axes = []
             for i in range(n):
                 axes.append(fig.add_axes([0.55, 0.1+(n-i-1)*(h+gap), 0.35, h]))
-            artists_b = self.plot_beliefs(axes, p_boxes[0], p_max=p_boxes.max())
+            artists_b = self.plot_beliefs(
+                axes, p_boxes[tmin], p_max=p_boxes[tmin:tmax].max(),
+            )
             cbar = plt.colorbar(artists_b[-1], ax=axes, fraction=1/8)
             cbar.set_label('$P_\mathrm{box}$')
             cbar.ax.locator_params(nbins=5)
