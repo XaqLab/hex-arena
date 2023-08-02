@@ -7,6 +7,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon, Rectangle
 from matplotlib.animation import FuncAnimation
+from stable_baselines3 import PPO
 
 from typing import Optional
 from collections.abc import Collection, Iterable
@@ -298,33 +299,42 @@ class ForagingEnv(Env):
             )
         return observations, actions
 
-    def convert_episode_data(self,
+    def convert_episode(self,
         episode: Episode,
-    ) -> tuple[Array, Array, list[Optional[bool]]]:
+        p_s: Optional[CompositeDistribution],
+    ) -> tuple[Array, Array, list[Optional[bool]], Array, Array, Array, Optional[Array]]:
         r"""Converts episode data to interpretable variables.
 
         Args
         ----
         episode:
-            An episode returned by a BeliefAgent, e.g. `episode =
-            agent.run_one_episode(...)`. 'infos' is needed to fully prepare the
-            data.
+            An episode returned by a BeliefAgent, e.g. `episode = agent.run_one_episode(...)`.
+            'infos' is needed to fully prepare the data.
+        p_s:
+            A distribution object that assumes monkey position, gaze and beliefs
+            about each box are independent from each other. It will be used to
+            interpret `episode.beliefs`.
 
         Returns
         -------
-        pos, gaze: (num_steps+1,)
-            Integer arrays for monkey position and gaze.
+        pos, gaze: int, (num_steps+1,)
+            Tile indices for monkey position and gaze.
         rewarded: (num_steps+1,)
-            Whether the agent is rewarded. See `plot_e_view` for more details.
-        foods: (num_steps+1, num_boxes)
-            Bool arrays for food status.
-        colors: (num_steps+1, num_boxes, mat_size, mat_size)
-            Integer arrays for color cues. All boxes regardless of the monkey
-            gaze are prepared.
-        counts: (num_steps+1, num_boxes, 2)
-            Successful and total push counts of each box.
+            Whether the agent is rewarded.
+        foods: bool, (num_steps+1, num_boxes)
+            Food status for all boxes.
+        colors: int, (num_steps+1, num_boxes, mat_size, mat_size)
+            Color cues of all boxes, regardless of the monkey gaze.
+        counts: int, (num_steps+1, num_boxes, 2)
+            Successful and total push counts of each box. The two numbers of
+            last dimension is `(success, total)` tuple.
+        p_boxes: float, (num_steps+1, num_boxes, 2, num_levels)
+            Belief about each box. The last two dimensions describe a joint
+            distribution over food status and cue level, and the numbers should
+            sum up to 1. If `p_s` is not provided, return ``None``.
 
         """
+        # extract variables from experimenter view
         assert episode.infos is not None, "Need 'infos' to extract colors of all boxes."
         pos, gaze, rewarded, foods, colors, counts = [], [], [], [], [], []
         counts_t = np.zeros((self.num_boxes, 2))
@@ -351,13 +361,33 @@ class ForagingEnv(Env):
         foods = np.array(foods).astype(bool)
         colors = np.array(colors).astype(int)
         counts = np.stack(counts).astype(int)
-        return pos, gaze, rewarded, foods, colors, counts
+        # extract beliefs about boxes from agent view
+        if p_s is None:
+            p_boxes = None
+        else:
+            assert isinstance(p_s, CompositeDistribution)
+            d_sets = [[0], [1]]+[[2*i+2, 2*i+3] for i in range(self.num_boxes)]
+            assert p_s.d_sets==d_sets
+            p_boxes = []
+            for k in range(2+self.num_boxes):
+                dist = p_s.s_dists[k]
+                ps = []
+                for belief in episode.beliefs:
+                    param_vec = p_s.set_param_vec(k, belief)
+                    ps.append(dist.loglikelihoods(dist.all_xs, param_vec).exp())
+                ps = torch.stack(ps).data.cpu().numpy()
+                if k==0:
+                    p_pos = ps
+                elif k==1:
+                    p_gaze = ps
+                else:
+                    p_boxes.append(ps.reshape(len(episode.beliefs), 2, -1))
+            p_boxes = np.stack(p_boxes, axis=1)
+        return pos, gaze, rewarded, foods, colors, counts, p_boxes
 
-    def plot_e_view(self,
-        ax: Axes,
-        pos: int, gaze: int, rewarded: Optional[bool],
-        foods: Optional[Array], colors: Optional[Array],
-        counts: Optional[Array],
+    def plot_arena(self,
+        ax: Axes, pos: int, gaze: int, rewarded: Optional[bool],
+        foods: Optional[Array], colors: Optional[Array], counts: Optional[Array],
         artists: Optional[list[Artist]] = None,
     ) -> list[Artist]:
         r"""Plots experimenter view of one step.
@@ -370,21 +400,22 @@ class ForagingEnv(Env):
         ax:
             Axis to plot figure.
         pos, gaze:
-            Monkey position and gaze.
+            Tile index for monkey position and gaze.
         rewarded:
-            Whether a reward was just obtained. If ``True``, the position tile
-            will be colored red. If ``False``, the position tile will be colored
-            blue.
+            Whether a reward was just obtained. The position tile will be
+            colored red if ``True``, blue if ``False``, and yellow if not
+            provided.
         foods: (num_boxes,)
-            Bool array of food status in each box.
+            Bool array of food status in each box. If provided, red or blue bars
+            will be plotted.
         colors: (num_boxes, mat_size, mat_size)
             Int array of color cues of each box.
         counts: (num_boxes, 2)
             Push counts since the beginning of the episode. Two numbers in each
             row are counts of successful pushes and total pushes.
         artists:
-            Artist of objects to render. If not ``None``, properties of each
-            artist will be updated accordingly.
+            Artist of objects to render. If provided, properties of each artist
+            will be updated accordingly.
 
         Returns
         -------
@@ -392,7 +423,7 @@ class ForagingEnv(Env):
             A list of artists, including:
             - A patch for monkey position,
             - A marker for monkey gaze,
-            - Lines for food status.
+            - Bars for food status.
             - Images for color cues.
             - Texts for push counts.
 
@@ -401,7 +432,7 @@ class ForagingEnv(Env):
             tile_color = 'yellow'
         else:
             tile_color = 'red' if rewarded else 'blue'
-        if foods is None:
+        if foods is None or colors is None:
             foods_color = ['none']*self.num_boxes
         else:
             foods_color = ['red' if food else 'blue' for food in foods]
@@ -416,7 +447,7 @@ class ForagingEnv(Env):
             h_pos.set_alpha(0.4)
             h_gaze = ax.scatter(
                 *self.arena.anchors[gaze], s=100,
-                marker='o', edgecolor='none', facecolor='blue',
+                marker='o', edgecolor='none', facecolor='green',
             )
             h_foods, h_boxes, h_counts = [], [], []
             for i, box in enumerate(self.boxes):
@@ -433,8 +464,7 @@ class ForagingEnv(Env):
                 )
                 h_boxes.append(h_box)
                 h_count = ax.text(
-                    x, y+np.sign(y)*1.8*s, texts[i],
-                    ha='center', va='center',
+                    x, y+np.sign(y)*1.8*s, texts[i], ha='center', va='center',
                 )
                 h_counts.append(h_count)
         else:
@@ -451,20 +481,73 @@ class ForagingEnv(Env):
         artists = [h_pos, h_gaze]+h_foods+h_boxes+h_counts
         return artists
 
-    def play_e_view(self,
-        pos, gaze, rewarded=None, foods=None, colors=None, counts=None,
-        tmin: Optional[int] = None,
-        tmax: Optional[int] = None,
-        figsize: tuple[float, float] = None,
-        use_sec: bool = True,
-    ):
-        r"""Creates animation of experimenter view.
+    def plot_beliefs(self,
+        axes: Collection[Axes], p_boxes: Array, p_max: Optional[float] = None,
+        artists: Optional[list[Artist]] = None,
+    ) -> list[Artist]:
+        r"""Plots agent view of one step.
+
+        Beliefs about box states including both food availability and cue level,
+        are plotted with a shared color map.
 
         Args
         ----
-        pos, gaze, rewarded, foods, colors, counts:
-            Variables typically returned by `convert_episode_data`, covering
-            time step interval [0, num_steps].
+        axes:
+            Axis object for each box.
+        p_boxes: float, (num_boxes, 2, num_levels)
+            Probability values for each food-cue combination. Values over the
+            last two dimensions will sum up to 1.
+        p_max:
+            Maximum value to determine color maps.
+        artists:
+            Artist of objects to render. See `plot_arena` for more details.
+
+        Returns
+        -------
+        artists:
+            A list of artists containing heat maps for each box.
+
+        """
+        assert len(axes)==self.num_boxes
+        if artists is None:
+            if p_max is None:
+                p_max = p_boxes.max()
+            h_boxes = []
+            for i, ax in enumerate(axes):
+                h_boxes.append(ax.imshow(
+                    p_boxes[i], aspect=self.boxes[i].num_levels/4, origin='lower',
+                    vmin=0, vmax=p_max, cmap='Reds',
+                ))
+                ax.set_xticks([0, self.boxes[i].num_levels-1])
+                if i==self.num_boxes-1:
+                    ax.set_xticklabels(['min', 'max'])
+                    ax.set_xlabel('Box cue', labelpad=-10)
+                else:
+                    ax.spines['bottom'].set_visible(False)
+                    ax.set_xticklabels([])
+                ax.set_yticks([0, 1])
+                ax.set_yticklabels(['F', 'T'])
+                ax.set_ylabel('Box {}'.format(i+1))
+            artists = h_boxes
+        else:
+            h_boxes = artists
+            for i in range(self.num_boxes):
+                h_boxes[i].set_data(p_boxes[i])
+        return artists
+
+    def play_episode(self,
+        pos, gaze, rewarded=None, foods=None, colors=None, counts=None, p_boxes=None,
+        tmin: Optional[int] = None, tmax: Optional[int] = None,
+        figsize: tuple[float, float] = None,
+        use_sec: bool = True,
+    ) -> tuple[Figure, FuncAnimation]:
+        r"""Creates animation of one episode.
+
+        Args
+        ----
+        pos, gaze, rewarded, foods, colors, counts, p_boxes:
+            Variables typically returned by `convert_episode`, covering time
+            step interval [0, num_steps].
         tmin, tmax:
             Time index range to visualize.
         figsize:
@@ -484,245 +567,57 @@ class ForagingEnv(Env):
         foods = [None]*len(pos) if foods is None else foods
         colors = [None]*len(pos) if colors is None else colors
         counts = [None]*len(pos) if counts is None else counts
+        if p_boxes is not None:
+            assert len(p_boxes)==len(pos)
         tmin = 0 if tmin is None else tmin
         tmax = len(pos) if tmax is None else tmax
         if figsize is None:
-            figsize = (4.5, 4)
+            figsize = (4.5, 4) if p_boxes is None else (7.5, 4)
         fig = plt.figure(figsize=figsize)
-        ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
+
+        if p_boxes is None:
+            ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
+        else:
+            ax = fig.add_axes([0.05, 0.05, 0.45, 0.9])
         self.arena.plot_mesh(ax)
         ax.set_xlim([-1.5, 1.5])
         ax.set_ylim([-1.6, 1.2])
-        artists = self.plot_e_view(
+        artists_a = self.plot_arena(
             ax, pos[0], gaze[0], rewarded[0], foods[0], colors[0], counts[0],
         )
         h_title = ax.set_title('')
 
-        def update(t, artists):
-            artists = self.plot_e_view(
+        if p_boxes is None:
+            artists_b = []
+        else:
+            n = self.num_boxes
+            gap = 0.05
+            h = (0.8-(n-1)*gap)/n
+            axes = []
+            for i in range(n):
+                axes.append(fig.add_axes([0.55, 0.1+(n-i-1)*(h+gap), 0.35, h]))
+            artists_b = self.plot_beliefs(axes, p_boxes[0], p_max=p_boxes.max())
+            cbar = plt.colorbar(artists_b[-1], ax=axes, fraction=1/8)
+            cbar.set_label('$P_\mathrm{box}$')
+            cbar.ax.locator_params(nbins=5)
+
+        def update(t, artists_a, artists_b):
+            artists_a = self.plot_arena(
                 ax, pos[t], gaze[t], rewarded[t],
-                foods[t], colors[t], counts[t], artists,
+                foods[t], colors[t], counts[t], artists_a,
             )
+            if p_boxes is not None:
+                artists_b = self.plot_beliefs(
+                    axes, p_boxes[t], artists=artists_b,
+                )
             h_title.set_text(r'$t$='+'{}'.format(
                 '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
             ))
-            return *artists, h_title
+            return *artists_a, *artists_b, h_title
         ani = FuncAnimation(
-            fig, update, fargs=(artists,), frames=range(tmin, tmax), blit=True,
+            fig, update, fargs=(artists_a, artists_b), frames=range(tmin, tmax), blit=True,
         )
         return fig, ani
-
-    def convert_beliefs(self,
-        p_s: CompositeDistribution,
-        beliefs: Tensor,
-    ):
-        assert isinstance(p_s, CompositeDistribution)
-        d_sets = [[0], [1]]+[[2*i+2, 2*i+3] for i in range(self.num_boxes)]
-        assert p_s.d_sets==d_sets
-        p_boxes = []
-        for k in range(2+self.num_boxes):
-            dist = p_s.s_dists[k]
-            ps = []
-            for belief in beliefs:
-                param_vec = p_s.set_param_vec(k, belief)
-                ps.append(dist.loglikelihoods(dist.all_xs, param_vec).exp())
-            ps = torch.stack(ps).data.cpu().numpy()
-            if k==0:
-                p_pos = ps
-            elif k==1:
-                p_gaze = ps
-            else:
-                p_boxes.append(ps.reshape(len(beliefs), 2, -1))
-        p_boxes = np.stack(p_boxes, axis=1)
-        return p_pos, p_gaze, p_boxes
-
-    def plot_a_view(self,
-        ax_pos: Axes, p_pos: Array,
-        ax_gaze: Axes, p_gaze: Array,
-        axes_boxes: Collection[Axes], p_boxes: Array,
-        kwargs_pos: Optional[dict] = None,
-        kwargs_gaze: Optional[dict] = None,
-        kwargs_box: Optional[dict] = None,
-        artists: Optional[list[Artist]] = None,
-    ) -> list[Artist]:
-        r"""Plots agent view of one step.
-
-        Args
-        ----
-        ax_pos, ax_gaze:
-            Axis to plot `p_pos` and `p_gaze` respectively.
-        p_pos, p_gaze: (num_tiles,)
-            Probability distribution of monkey position and gaze.
-        ax_boxes:
-            Axes to plot `p_boxes`.
-        p_boxes: (num_boxes, 2, num_levels)
-            Joint probability of food status and cue level for each box.
-        kwargs_pos, kwargs_gaze:
-            Keyword arguments passed to `plot_map` for `p_pos` and `p_gaze`.
-        kwargs_box:
-            Keyword arguments for plotting box beliefs.
-
-        """
-        assert len(p_pos)==self.arena.num_tiles
-        assert len(p_gaze)==self.arena.num_tiles
-        assert len(axes_boxes)==self.num_boxes
-        kwargs_pos = Config(kwargs_pos)
-        kwargs_gaze = Config(kwargs_gaze)
-        kwargs_box = Config(kwargs_box)
-        kwargs_box.fill({
-            'origin': 'lower', 'vmin': 0, 'vmax': p_boxes.max(), 'cmap': 'Reds',
-        })
-        if artists is None:
-            h_pos = self.arena.plot_map(ax_pos, p_pos, clabel='$P_\mathrm{position}$', **kwargs_pos)
-            h_gaze = self.arena.plot_map(ax_gaze, p_gaze, clabel='$P_\mathrm{gaze}$', **kwargs_gaze)
-            h_boxes = []
-            for i in range(self.num_boxes):
-                ax = axes_boxes[i]
-                h_boxes.append(ax.imshow(
-                    p_boxes[i].T, aspect=2.5/self.boxes[i].num_levels, **kwargs_box,
-                ))
-                ax.set_xticks([0, 1])
-                ax.set_xticklabels(['F', 'T'])
-                ax.set_yticks([0, self.boxes[i].num_levels-1])
-                if i==0:
-                    ax.set_ylabel('Box cue', labelpad=-10)
-                    ax.set_yticklabels(['min', 'max'])
-                else:
-                    ax.set_yticklabels([])
-                ax.set_title('Box {}'.format(i+1))
-            artists = h_pos+h_gaze+h_boxes
-        else:
-            n = self.arena.num_tiles
-            h_pos = artists[:n]
-            self.arena.plot_map(ax_pos, p_pos, h_tiles=h_pos)
-            h_gaze = artists[n:2*n]
-            self.arena.plot_map(ax_gaze, p_gaze, h_tiles=h_gaze)
-            h_boxes = artists[2*n:2*n+self.num_boxes]
-            for i in range(self.num_boxes):
-                h_boxes[i].set_data(p_boxes[i].T)
-        return artists
-
-    def play_a_view(self,
-        p_pos, p_gaze, p_boxes,
-        tmin: Optional[int] = None,
-        tmax: Optional[int] = None,
-        figsize = None,
-        use_sec: bool = True,
-    ):
-        r"""Creates animation of agent view.
-
-        Args
-        ----
-        p_pos, p_gaze, p_boxes:
-            Variables typically returned by `convert_beliefs`, covering
-            time step interval [0, num_steps].
-        tmin, tmax:
-            Time index range to visualize.
-        figsize:
-            Figure size.
-        use_sec:
-            Whether to use seconds as time units. If ``False``, will use time
-            steps as units.
-
-        Returns
-        -------
-        fig, ani:
-            Object of the figure and animation.
-
-        """
-        tmin = 0 if tmin is None else tmin
-        tmax = len(p_pos) if tmax is None else tmax
-        if figsize is None:
-            figsize = (7, 6)
-        fig = plt.figure(figsize=figsize)
-        ax_pos = fig.add_axes([0.05, 0.05, 0.44, 0.55])
-        ax_gaze = fig.add_axes([0.51, 0.05, 0.44, 0.55])
-
-        n = self.num_boxes
-        gap = 0.02
-        width = (0.8-(n-1)*gap)/n
-        axes_boxes = []
-        for i in range(n):
-            axes_boxes.append(fig.add_axes([0.15+i*(width+gap), 0.65, width, 0.25]))
-
-        artists = self.plot_a_view(
-            ax_pos, p_pos[0], ax_gaze, p_gaze[0], axes_boxes, p_boxes[0],
-            kwargs_pos={'vmax': p_pos.max()}, kwargs_gaze={'vmax': p_gaze.max()},
-            kwargs_box={'vmax': p_boxes.max()},
-        )
-        plt.colorbar(artists[-1], ax=axes_boxes, fraction=1/8, label='$P_\mathrm{box}$')
-        _ax = fig.add_axes([0.05, 0.9, 0.1, 0]) # dummy axis since fig.text doesn't work
-        _ax.axis('off')
-        h_time = _ax.set_title('', fontsize='small')
-
-        def update(t, artists):
-            artists = self.plot_a_view(
-                ax_pos, p_pos[t], ax_gaze, p_gaze[t],
-                axes_boxes, p_boxes[t], artists=artists,
-            )
-            h_time.set_text(r'$t$='+'{}'.format(
-                '{:d} sec'.format(int(np.floor(t*self.dt))) if use_sec else t
-            ))
-            return *artists, h_time
-        ani = FuncAnimation(
-            fig, update, fargs=(artists,), frames=range(tmin, tmax), blit=True,
-        )
-        return fig, ani
-
-    def plot_occupancy(self,
-        pos: Iterable[int], gaze: Iterable[int],
-        figsize: tuple[float, float] = None,
-    ):
-        r""""Plots occupancy map of behavior.
-
-        Args
-        ----
-        pos, gaze:
-            Integers for monkey position and gaze at each time step.
-        figsize:
-            Figure size for each heat map.
-
-        Returns
-        -------
-        fig_p, fig_g:
-            Heat map figure for position and gaze histogram respectively.
-
-        """
-        figs = []
-        for val, title in zip(
-            [pos, gaze], ['Monkey position', 'Monkey gaze']
-        ):
-            counts = np.zeros(self.arena.num_tiles)
-            for i in range(self.arena.num_tiles):
-                counts[i] = (np.array(val)==i).sum()
-            ps = counts/counts.sum()
-            fig, ax = self.arena.plot_heatmap(ps, figsize, clabel='Probability')
-            ax.set_title(title)
-            figs.append(fig)
-        fig_p, fig_g = figs
-        return fig_p, fig_g
-
-    def food_probs(self,
-        beliefs, states,
-        p_s: BaseDistribution,
-    ):
-        num_steps = len(beliefs)-1
-        nvec = self.state_space.nvec[-6:]
-        box_states = np.stack(np.unravel_index(np.arange(np.prod(nvec)), nvec)).T
-
-        probs = np.zeros((num_steps+1, 3)) # probability of food in each box
-        for t in range(num_steps+1):
-            belief = beliefs[t]
-            _states = np.tile(states[t], (np.prod(nvec), 1))
-            _states[:, 2:] = box_states
-            p_s.set_param_vec(belief)
-            with torch.no_grad():
-                _probs = p_s.loglikelihoods(
-                    torch.tensor(_states, dtype=torch.long),
-                ).exp().numpy()
-            for i in range(3):
-                probs[t, i] = _probs[box_states[:, 2*i]==1].sum()
-        return probs
 
     def play_traces(self,
         vals, num_steps = None,
