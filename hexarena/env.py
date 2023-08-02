@@ -301,7 +301,7 @@ class ForagingEnv(Env):
 
     def convert_episode(self,
         episode: Episode,
-        p_s: Optional[CompositeDistribution],
+        p_s: Optional[CompositeDistribution] = None,
     ) -> tuple[Array, Array, list[Optional[bool]], Array, Array, Array, Optional[Array]]:
         r"""Converts episode data to interpretable variables.
 
@@ -570,7 +570,7 @@ class ForagingEnv(Env):
         if p_boxes is not None:
             assert len(p_boxes)==len(pos)
         tmin = 0 if tmin is None else tmin
-        tmax = len(pos)+1 if tmax is None else tmax
+        tmax = len(pos) if tmax is None else min(tmax, len(pos))
         if figsize is None:
             figsize = (4.5, 4) if p_boxes is None else (7.5, 4)
         fig = plt.figure(figsize=figsize)

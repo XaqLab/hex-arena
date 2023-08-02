@@ -84,7 +84,7 @@ class Arena:
         )
         ax.scatter(
             _anchors[self.boxes, 0], _anchors[self.boxes, 1], s=120,
-            marker='o', facecolors='none', edgecolors='red', linewidths=2,
+            marker='o', facecolors='none', edgecolors='lime', linewidths=2,
         )
 
         def append_seg(x, y, theta):
