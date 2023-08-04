@@ -95,7 +95,10 @@ class BaseFoodBox:
             _cue/self.sigma, (1-_cue)/self.sigma,
             size=(self.mat_size, self.mat_size),
         )
-        self.colors = np.floor(p*self.num_grades).astype(int)
+        _colors = p*self.num_grades-0.5
+        self.colors = np.floor(_colors).astype(int)
+        self.colors += (self.rng.random(size=_colors.shape)>(_colors-self.colors)).astype(int)
+        self.colors = np.clip(self.colors, 0, self.num_grades-1)
 
     def _reset(self) -> None:
         r"""Resets food and cue."""

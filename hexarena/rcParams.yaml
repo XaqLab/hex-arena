@@ -17,9 +17,9 @@ box:
       dt: 1.0 # sec
       reward: 10.
       num_levels: 10
-      num_grades: 5
+      num_grades: 8
       num_patches: 1
-      sigma: 0.2
+      sigma: 0.002
   StationaryBox:
     _init_:
       tau: 20 # sec
