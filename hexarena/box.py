@@ -254,7 +254,7 @@ class RestorableBox(BaseFoodBox):
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets box parameters."""
-        self.theta_tau, self.change_rate, self.jump_ratio, self.restore_ratio, self.sigma = param
+        self.theta_tau, self.change_rate, self.restore_ratio, self.jump_ratio, self.sigma = param
 
     def _tau2cue(self, tau: float) -> int:
         _cue = 1-stats.gamma.cdf(tau, a=self.k_tau, scale=self.theta_tau)
