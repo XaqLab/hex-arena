@@ -1,7 +1,5 @@
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
 from jarvis.config import Config
@@ -16,7 +14,7 @@ class BaseFoodBox:
     r"""Base class for a food box with 2D color cue."""
 
     food: bool # food availability
-    cue: float # a number in (0, 1)
+    cue: int # a number in [0, num_levels)
     colors: Array # a 2D int array of shape (mat_size, mat_size)
 
     param_low: EnvParam
@@ -80,30 +78,30 @@ class BaseFoodBox:
 
     def get_state(self) -> BoxState:
         r"""Returns box state."""
-        state = (int(self.food), int(self.cue*self.num_levels))
+        state = (int(self.food), self.cue)
         return state
 
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
         self.food = bool(state[0])
-        self.cue = (float(state[1])+self.rng.random())/self.num_levels
+        self.cue = state[1]
 
     def render(self) -> None:
         r"""Renders color cues."""
-        _cue = (self.cue*(self.num_grades-1)+0.5)/self.num_grades
+        _cue = (self.cue+0.5)/self.num_levels
         p = self.rng.beta(
             _cue/self.sigma, (1-_cue)/self.sigma,
             size=(self.mat_size, self.mat_size),
         )
         _colors = p*self.num_grades-0.5
         self.colors = np.floor(_colors).astype(int)
-        self.colors += (self.rng.random(size=_colors.shape)>(_colors-self.colors)).astype(int)
+        self.colors += (self.rng.random(size=_colors.shape)<(_colors-self.colors)).astype(int)
         self.colors = np.clip(self.colors, 0, self.num_grades-1)
 
     def _reset(self) -> None:
         r"""Resets food and cue."""
         self.food = False
-        self.cue = 0.
+        self.cue = self.rng.choice(self.num_levels)
 
     def reset(self, seed: Optional[int] = None) -> None:
         r"""Resets box state.
@@ -240,8 +238,6 @@ class RestorableBox(BaseFoodBox):
 
     """
 
-    tau: float
-
     def __init__(self,
         *,
         k_tau: Optional[float] = None,
@@ -283,45 +279,41 @@ class RestorableBox(BaseFoodBox):
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
-        param = (self.theta_tau, self.change_rate, self.jump_ratio, self.restore_ratio, self.sigma)
+        param = (self.theta_tau, self.change_rate, self.restore_ratio, self.jump_ratio, self.sigma)
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets box parameters."""
         self.theta_tau, self.change_rate, self.jump_ratio, self.restore_ratio, self.sigma = param
 
-    def _tau2cue(self, tau):
-        cue = 1-stats.gamma.cdf(tau, a=self.k_tau, scale=self.theta_tau)
+    def _tau2cue(self, tau: float) -> int:
+        _cue = 1-stats.gamma.cdf(tau, a=self.k_tau, scale=self.theta_tau)
+        _cue = _cue*self.num_levels-0.5
+        cue = np.floor(_cue).astype(int)
+        cue += int(self.rng.random()<(_cue-cue))
+        cue = np.clip(cue, 0, self.num_levels-1)
         return cue
 
-    def _cue2tau(self, cue):
-        tau = stats.gamma.ppf(1-cue, a=self.k_tau, scale=self.theta_tau)
+    def _cue2tau(self, cue: int) -> float:
+        _cue = (cue+0.5)/self.num_levels
+        tau = stats.gamma.ppf(1-_cue, a=self.k_tau, scale=self.theta_tau)
         return tau
 
-    def set_state(self, state: BoxState) -> None:
-        r"""Sets box state."""
-        super().set_state(state)
-        self.tau = self._cue2tau(self.cue)
-
-    def _reset(self):
-        self.food = False
-        self.tau = self.rng.gamma(self.k_tau, self.theta_tau)
-        self.cue = self._tau2cue(self.tau)
-
     def _step(self, push: bool):
+        tau = self._cue2tau(self.cue)
         if push:
             if not self.food:
-                self.tau *= self.jump_ratio
+                tau *= self.jump_ratio
             self.food = False
         else:
-            p = 1-np.exp(-self.dt/self.tau)
+            p = 1-np.exp(-self.dt/tau)
             if self.rng.random()<p:
                 self.food = True
             p = 1-np.exp(-self.dt*self.change_rate)
             if self.rng.random()<p:
                 new_tau = self.rng.gamma(self.k_tau, self.theta_tau)
-                self.tau = np.exp(
-                    (1-self.restore_ratio)*np.log(self.tau)
+                tau = np.exp(
+                    (1-self.restore_ratio)*np.log(tau)
                     +self.restore_ratio*np.log(new_tau)
                 )
-        self.cue = self._tau2cue(self.tau)
+        self.cue = self._tau2cue(tau)
