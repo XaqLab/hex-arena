@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
 from jarvis.config import Config
@@ -142,35 +141,6 @@ class BaseFoodBox:
         self._step(push)
         self.render()
         return reward
-
-    def plot_belief(self,
-        probs: Array,
-        figsize: tuple[float, float] = None,
-        cmap: str = 'YlOrBr',
-        vmin: float = 0,
-        vmax: Optional[float] = None,
-    ):
-        assert probs.shape==(2, self.num_levels)
-        assert np.all(probs>=0)
-        if figsize is None:
-            figsize = (4.5, 1.5)
-        cmap = plt.get_cmap(cmap)
-        if vmax is None:
-            vmax = probs.max()
-
-        fig = plt.figure(figsize=figsize)
-        ax = fig.add_axes([0.05, 0.05, 0.7, 0.9])
-        h = ax.imshow(
-            probs, cmap=cmap, vmin=vmin, vmax=vmax,
-            extent=[0, 1, 1.5, -0.5], aspect=0.2,
-        )
-        ax.set_xticks([0, 1])
-        ax.set_xlabel('Cue level', labelpad=-10)
-        ax.set_yticks([0, 1])
-        ax.set_yticklabels(['F', 'T'])
-        ax.set_ylabel('Food')
-        plt.colorbar(h, ax=ax, fraction=0.1, shrink=0.8, label='Probability')
-        return fig, ax
 
 
 class StationaryBox(BaseFoodBox):
