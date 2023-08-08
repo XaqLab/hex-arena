@@ -369,19 +369,14 @@ class ForagingEnv(Env):
             d_sets = [[0], [1]]+[[2*i+2, 2*i+3] for i in range(self.num_boxes)]
             assert p_s.d_sets==d_sets
             p_boxes = []
-            for k in range(2+self.num_boxes):
+            for k in range(2, 2+self.num_boxes):
                 dist = p_s.s_dists[k]
                 ps = []
                 for belief in episode.beliefs:
                     param_vec = p_s.set_param_vec(k, belief)
                     ps.append(dist.loglikelihoods(dist.all_xs, param_vec).exp())
                 ps = torch.stack(ps).data.cpu().numpy()
-                if k==0:
-                    p_pos = ps
-                elif k==1:
-                    p_gaze = ps
-                else:
-                    p_boxes.append(ps.reshape(len(episode.beliefs), 2, -1))
+                p_boxes.append(ps.reshape(len(episode.beliefs), 2, -1))
             p_boxes = np.stack(p_boxes, axis=1)
         return pos, gaze, rewarded, foods, colors, counts, p_boxes
 
