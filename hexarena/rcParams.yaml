@@ -29,7 +29,7 @@ box:
       theta_tau: 3 # sec
       change_rate: 0.05 # 1/sec
       restore_ratio: 0.8
-      jump_ratio: 2.0
+      jump_ratio: 1.2
 
 env:
   ForagingEnv:
