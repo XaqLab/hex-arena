@@ -374,7 +374,8 @@ class ForagingEnv(Env):
                 ps = []
                 for belief in episode.beliefs:
                     param_vec = p_s.set_param_vec(k, belief)
-                    ps.append(dist.loglikelihoods(dist.all_xs, param_vec).exp())
+                    logps, _ = dist.loglikelihoods(dist.all_xs, param_vec)
+                    ps.append(logps.exp())
                 ps = torch.stack(ps).data.cpu().numpy()
                 p_boxes.append(ps.reshape(len(episode.beliefs), 2, -1))
             p_boxes = np.stack(p_boxes, axis=1)
