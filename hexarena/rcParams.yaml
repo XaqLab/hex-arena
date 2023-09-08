@@ -8,7 +8,7 @@ monkey:
     _init_:
       push_cost: 1.
       turn_price: 0.001 # deg^{-1}
-      move_price: 1.
+      move_price: 0.
       look_price: 0.001 # deg^{-1}
 
 box:

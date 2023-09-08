@@ -44,22 +44,13 @@ class Monkey:
         self.arena: Arena = arena
         self.push_cost: float = _rcParams.push_cost if push_cost is None else push_cost
         self.turn_price: float = _rcParams.turn_price if turn_price is None else turn_price
-        assert self.turn_price>=0, (
-            f"Turn cost per degree `turn_price` ({self.turn_price}) must be non-negative."
-        )
         self.move_price: float = _rcParams.move_price if move_price is None else move_price
-        assert self.move_price>=0, (
-            f"Move cost per distance square `move_price` ({self.move_price}) must be non-negative."
-        )
         self.look_price: float = _rcParams.look_price if look_price is None else look_price
-        assert self.look_price>=0, (
-            f"Look cost per degree `look_price` ({self.look_price}) must be non-negative."
-        )
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
         # param: (push_cost, turn_price, move_price, look_price)
-        self.param_low = [-np.inf, 0, 0, 0]
+        self.param_low = [-np.inf, -np.inf, -np.inf, -np.inf]
         self.param_high = [np.inf, np.inf, np.inf, np.inf]
         # action: (push, move, look)
         self.action_space = Discrete(self.arena.num_boxes*self.arena.num_tiles+self.arena.num_tiles**2)
