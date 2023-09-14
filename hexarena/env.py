@@ -9,10 +9,12 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.animation import FuncAnimation
 from stable_baselines3 import PPO
 
-from typing import Optional
-from collections.abc import Collection, Iterable
+from typing import Optional, Union
+from collections.abc import Collection, Sequence
 from irc.distribution import BaseDistribution, CompositeDistribution
 from irc.buffer import Episode
+
+from hexarena.alias import EnvParam
 
 from . import rcParams
 from .arena import Arena
@@ -38,74 +40,75 @@ class ForagingEnv(Env):
         self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
         self.dt = _rcParams.dt if dt is None else dt
 
-        arena = Config(arena)
-        arena._target_ = 'hexarena.arena.Arena'
+        arena = Config(arena).fill(_rcParams.arena)
         self.arena: Arena = arena.instantiate()
 
-        monkey = Config(monkey)
-        monkey._target_ = 'hexarena.monkey.Monkey'
+        monkey = Config(monkey).fill(_rcParams.monkey)
         self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
         self.num_boxes = self.arena.num_boxes
         if boxes is None:
             boxes = [None]*self.num_boxes
-        else:
-            assert len(boxes)==self.num_boxes
+        elif len(boxes)==1:
+            boxes *= self.num_boxes
+        assert len(boxes)==self.num_boxes
         self.boxes: list[BaseFoodBox] = []
         for i in range(self.num_boxes):
-            box = Config(boxes[i])
-            if '_target_' not in box:
-                box._target_ = _rcParams.box
+            box = Config(boxes[i]).fill(_rcParams.box)
             box.dt = self.dt
             box = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
 
-        # environment parameter: (*monkey_param, *boxes_param)
-        self._param_dims, self.param_low, self.param_high = [], [], []
-        for x in self._components():
-            self._param_dims.append(len(x.get_param()))
-            self.param_low += [*x.param_low]
-            self.param_high += [*x.param_high]
-
         # state: (*monkey_state, *boxes_state)
-        self._state_dims, nvec = [], []
+        self._state_dims, nvec = (), ()
         for x in self._components():
             _nvec = x.state_space.nvec
-            self._state_dims.append(len(_nvec))
-            nvec += [*_nvec]
+            self._state_dims += (len(_nvec),)
+            nvec += (*_nvec,)
         self.state_space = MultiDiscrete(nvec)
         # observation: (*monkey_state, *boxes_colors)
-        nvec = [*self.monkey.state_space.nvec]
+        nvec = (*self.monkey.state_space.nvec,)
         for box in self.boxes:
-            nvec += [box.num_grades+1]*box.num_patches # additional grade for invisible
+            nvec += (box.num_grades+1,)*box.num_patches # additional grade for invisible
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
 
-    def _components(self) -> list:
+    def _components(self) -> list[Union[Monkey, BaseFoodBox]]:
         r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
-        param = tuple()
+        param = []
         for x in self._components():
-            param += tuple([*x.get_param()])
+            param += [*x.get_param()]
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets environment parameter."""
-        idx = 0
-        for x, param_dim in zip(self._components(), self._param_dims):
-            x.set_param([param[i] for i in range(idx, idx+param_dim)])
-            idx += param_dim
+        c = 0
+        for x in self._components():
+            val = x.get_param()
+            n = len(val)
+            val = param[c:c+n]
+            x.set_param(val)
+
+    def param_bounds(self) -> tuple[EnvParam, EnvParam]:
+        r"""Returns lower and upper bound of environment parameters."""
+        param_low, param_high = [], []
+        for x in self._components():
+            low, high = x.param_bounds()
+            param_low += [*low]
+            param_high += [*high]
+        return param_low, param_high
 
     def get_state(self) -> State:
         r"""Returns environment state."""
-        state = tuple()
+        state = ()
         for x in self._components():
-            state += tuple([*x.get_state()])
+            state += (*x.get_state(),)
         return state
 
     def set_state(self, state: State) -> None:
@@ -140,13 +143,13 @@ class ForagingEnv(Env):
         set to a constant `box.num_patches` to represent 'UNKNOWN'.
 
         """
-        observation = tuple([*self.monkey.get_state()])
+        observation = (*self.monkey.get_state(),)
         for box in self.boxes:
             if self.monkey.gaze==box.pos:
                 colors = box.colors.reshape(-1)
             else:
                 colors = np.full((box.num_patches,), fill_value=box.num_grades, dtype=int)
-            observation += tuple([*colors])
+            observation += (*colors,)
         return observation
 
     def _get_info(self) -> dict:
@@ -154,7 +157,7 @@ class ForagingEnv(Env):
         info = {
             'pos': self.monkey.pos, 'gaze': self.monkey.gaze,
             'foods': [box.food for box in self.boxes],
-            'cues': [box.cue for box in self.boxes],
+            'levels': [box.level for box in self.boxes],
             'colors': [box.colors for box in self.boxes],
         }
         return info
@@ -687,3 +690,59 @@ class ForagingEnv(Env):
 
         ani = FuncAnimation(fig, update, frames=range(num_steps+1), blit=True)
         return fig, ani
+
+
+class SimilarBoxForagingEnv(ForagingEnv):
+    r"""Environment where some box parameters are shared."""
+
+    def __init__(self,
+        box: dict,
+        **kwargs,
+    ):
+        r"""
+        Args
+        ----
+        box:
+            A dictionary specifying shared parameters of boxes.
+
+        """
+        if kwargs.get('boxes') is None:
+            kwargs['boxes'] = [box]
+        else:
+            for i in range(len(kwargs['boxes'])):
+                kwargs['boxes'][i].update(box)
+        super().__init__(**kwargs)
+        self._shared_names = [n for n in self.boxes[0].param_names if n in box]
+        for i in range(self.num_boxes):
+            for name in self._shared_names:
+                self.boxes[i].param_names.remove(name)
+
+    def get_param(self) -> EnvParam:
+        param = []
+        for name in self._shared_names:
+            val, *_ = self.boxes[0]._get_param(name)
+            param += val
+        param += super().get_param()
+        return param
+
+    def set_param(self, param: EnvParam) -> None:
+        c = 0
+        for name in self._shared_names:
+            val, *_ = self.boxes[0]._get_param(name)
+            n = len(val)
+            val = param[c:c+n]
+            for box in self.boxes:
+                box._set_param(name, val)
+            c += n
+        super().set_param(param[c:])
+
+    def param_bounds(self) -> tuple[EnvParam, EnvParam]:
+        param_low, param_high = [], []
+        for name in self._shared_names:
+            _, low, high = self.boxes[0]._get_param(name)
+            param_low += [*low]
+            param_high += [*high]
+        low, high = super().param_bounds()
+        param_low += [*low]
+        param_high += [*high]
+        return param_low, param_high

@@ -1,9 +1,11 @@
 import numpy as np
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
-from jarvis.config import Config
 
 from typing import Optional
+from collections.abc import Collection
+
+from hexarena.alias import EnvParam
 
 from . import rcParams
 from .alias import Array, BoxState, EnvParam
@@ -13,11 +15,8 @@ class BaseFoodBox:
     r"""Base class for a food box with 2D color cue."""
 
     food: bool # food availability
-    cue: int # a number in [0, num_levels)
+    level: int # a number in [0, num_levels)
     colors: Array # a 2D int array of shape (mat_size, mat_size)
-
-    param_low: EnvParam
-    param_high: EnvParam
 
     def __init__(self,
         *,
@@ -34,9 +33,9 @@ class BaseFoodBox:
         dt:
             Time step size for temporal discretization, in seconds.
         reward:
-            Reward value of food.
+            Reward value of food, not considered as a parameter.
         num_levels:
-            Number of levels to discretize `cue`.
+            Number of cue levels.
         num_grades:
             Number of distinct colors on a color map for discrete values of
             `colors`.
@@ -46,7 +45,7 @@ class BaseFoodBox:
             `num_patches=16`, a 4*4 grid of integers will be used to represent
             the color pattern on the screen.
         sigma:
-            Parameter governing the noise of color cues, should be in [0, 0.5].
+            Parameter governing the noise of color cues, should be in (0, 0.5).
             Color cues are drawn from a beta distribution of which the variance
             is determined by sigma. See `render` for more details.
 
@@ -64,43 +63,96 @@ class BaseFoodBox:
             f"`num_patches` ({self.num_patches}) must be a squre of an integer."
         )
 
-        self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, cue)
+        self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
         self.rng = np.random.default_rng()
+        self.param_names = ['sigma']
+
+    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
+        r"""Returns value and bounds of a named parameter.
+
+        Args
+        ----
+        name:
+            Parameter name.
+
+        Returns
+        -------
+        val, low, high:
+            List of floats representing the current value, lower and upper
+            bounds of the parameter.
+
+        """
+        if name=='sigma':
+            val, low, high = [self.sigma], [0], [0.5]
+        return val, low, high
+
+    def _set_param(self, name: str, val: EnvParam) -> None:
+        r"""Sets value of a named parameter.
+
+        Args
+        ----
+        name:
+            Parameter name.
+        val:
+            Parameter values.
+
+        """
+        if name=='sigma':
+            assert len(val)==1
+            self.sigma = val[0]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
-        raise NotImplementedError
+        param = []
+        for name in self.param_names:
+            val, *_ = self._get_param(name)
+            param += val
+        return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets box parameters."""
-        raise NotImplementedError
+        c = 0
+        for name in self.param_names:
+            val, low, high = self._get_param(name)
+            n = len(val)
+            val = param[c:c+n]
+            for i in range(n):
+                assert low[i]<val[i]<high[i]
+            self._set_param(name, val)
+            c += n
+
+    def param_bounds(self) -> tuple[EnvParam, EnvParam]:
+        r"""Returns lower and upper bound of box parameters."""
+        param_low, param_high = [], []
+        for name in self.param_names:
+            _, low, high = self._get_param(name)
+            param_low += low
+            param_high += high
+        return param_low, param_high
 
     def get_state(self) -> BoxState:
         r"""Returns box state."""
-        state = (int(self.food), self.cue)
+        state = (int(self.food), self.level)
         return state
 
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
         self.food = bool(state[0])
-        self.cue = state[1]
+        self.level = state[1]
 
     def render(self) -> None:
-        r"""Renders color cues."""
-        _cue = (self.cue+0.5)/self.num_levels
-        p = self.rng.beta(
-            _cue/self.sigma, (1-_cue)/self.sigma,
-            size=(self.mat_size, self.mat_size),
-        )
-        _colors = p*self.num_grades-0.5
-        self.colors = np.floor(_colors).astype(int)
-        self.colors += (self.rng.random(size=_colors.shape)<(_colors-self.colors)).astype(int)
-        self.colors = np.clip(self.colors, 0, self.num_grades-1)
+        r"""Renders color cues.
 
-    def _reset(self) -> None:
-        r"""Resets food and cue."""
-        self.food = False
-        self.cue = self.rng.choice(self.num_levels)
+        Colors are drawn from a discretized beta distribution, of which the mean
+        is determined by `level`.
+
+        """
+        cue = (self.level+0.5)/self.num_levels
+        rv = stats.beta(a=cue/self.sigma, b=(1-cue)/self.sigma)
+        self.colors = self.rng.choice(
+            self.num_grades, size=(self.mat_size, self.mat_size),
+            p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
+        )
 
     def reset(self, seed: Optional[int] = None) -> None:
         r"""Resets box state.
@@ -113,11 +165,12 @@ class BaseFoodBox:
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self._reset()
+        self.food = False
+        self.level = self.rng.choice(self.num_levels)
         self.render()
 
     def _step(self, push: bool) -> None:
-        r"""Updates food and cue."""
+        r"""Updates food and level."""
         raise NotImplementedError
 
     def step(self, push: bool) -> float:
@@ -143,147 +196,98 @@ class BaseFoodBox:
         return reward
 
 
-class StationaryBox(BaseFoodBox):
-    r"""Food box with a fixed appear rate.
-
-    Food appears according to a Poisson process with fixed rate. The color cue
-    represents the cumulative probability of food being available, essentially
-    a timer.
-
-    """
+class PoissonBox(BaseFoodBox):
+    r"""Box with food following a Poisson process."""
 
     def __init__(self,
         *,
-        tau: Optional[float] = None,
+        taus: Optional[Collection[float]] = None,
         **kwargs,
     ):
         r"""
         Args
         ----
-        tau:
-            Time constant of Poisson process. An time interval is drawn from the
-            exponential distribution parameterized by `tau` after each push.
-        kwargs:
-            Additional keyword arguments for `BaseFoodBox`.
+        taus:
+            Time constant for Poisson process corresponding to each level.
 
         """
-        _rcParams = rcParams.get('box.StationaryBox._init_', {})
+        _rcParams = rcParams.get('box.PoissonBox._init_', {})
+        if taus is not None:
+            kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
-        self.tau = _rcParams.tau if tau is None else tau
+        if taus is None:
+            self.taus = np.full(self.num_levels, fill_value=_rcParams.tau)
+        else:
+            self.taus = np.array([*taus])
 
-        # param: (tau, sigma)
-        self.param_low = [0, 0]
-        self.param_high = [np.inf, 0.5]
+        self.param_names += ['taus']
 
-    def get_param(self) -> EnvParam:
-        r"""Returns box parameters."""
-        param = (self.tau, self.sigma)
-        return param
+    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
+        if name=='taus':
+            val = [*self.taus]
+            low = [0]*self.num_levels
+            high = [np.inf]*self.num_levels
+        else:
+            val, low, high = super()._get_param(name)
+        return val, low, high
 
-    def set_param(self, param: EnvParam) -> None:
-        r"""Sets box parameters."""
-        self.tau, self.sigma = param
+    def _set_param(self, name: str, val: EnvParam) -> None:
+        if name=='taus':
+            assert len(val)==self.num_levels
+            self.taus = np.array([*val])
+        else:
+            super()._set_param(name, val)
 
-    def _step(self, push: bool):
+    def _step(self, push: bool) -> None:
         if push:
             self.food = False
-            self.cue = 0.
         else:
-            p_appear = 1-np.exp(-self.dt/self.tau)
+            p_appear = 1-np.exp(-self.dt/self.taus[self.level])
             if self.rng.random()<p_appear:
                 self.food = True
-            self.cue = 1-(1-self.cue)*(1-p_appear)
 
 
-class RestorableBox(BaseFoodBox):
-    r"""Food box with time-varying appear rate.
-
-    Food appears according to a Poisson process with temporal parameter `tau`,
-    but `tau` itself can change over time. Controlled by another Poisson
-    process, a new `tau` value will be drawn from a default distribution, and
-    averaged with current value in a weighted manner. In addition, `tau` will
-    increase when a incorret push is made.
-
-    Color cue now explicitly encodes `tau` with noise controlled by `sigma`.
-
-    """
+class VolatileBox(PoissonBox):
+    r"""Box with volatile qualities."""
 
     def __init__(self,
         *,
-        k_tau: Optional[float] = None,
-        theta_tau: Optional[float] = None,
-        change_rate: Optional[float] = None,
-        restore_ratio: Optional[float] = None,
-        jump_ratio: Optional[float] = None,
+        volatility: Optional[float] = None,
         **kwargs,
     ):
         r"""
         Args
         ----
-        k_tau, theta_tau:
-            Parameters of a gamma distribution, serving as the default
-            distribution of redrawing `tau`.
-        change_rate:
-            Temporal parameter controlling the update of `tau`, in the same way
-            as `tau` controlling the update of `food`.
-        restore_ratio:
-            Parameter controlling the average of current `tau` and the newly
-            drawn `tau`. 0 means stationary food rate, and 1 means no temporal
-            smoothing.
-        jump_ratio:
-            Parameter controlling the penalty of incorrect push, `tau` will
-            increase by `jump_ratio` in such cases.
+        volatility:
+            A positive number describing the level change rate.
 
         """
-        _rcParams = Config(rcParams.get('box.RestorableBox._init_'))
+        _rcParams = rcParams.get('box.VolatileBox._init_', {})
         super().__init__(**kwargs)
-        self.k_tau = _rcParams.k_tau if k_tau is None else k_tau
-        self.theta_tau = _rcParams.theta_tau if theta_tau is None else theta_tau
-        self.change_rate = _rcParams.change_rate if change_rate is None else change_rate
-        self.restore_ratio = _rcParams.restore_ratio if restore_ratio is None else restore_ratio
-        self.jump_ratio = _rcParams.jump_ratio if jump_ratio is None else jump_ratio
+        self.volatility = _rcParams.volatility if volatility is None else volatility
 
-        # param: (theta_tau, change_rate, restore_ratio, jump_ratio, sigma)
-        self.param_low = [0, 0, 0, 1, 0]
-        self.param_high = [np.inf, np.inf, 1, np.inf, 0.5]
+        self.param_names += ['volatility']
 
-    def get_param(self) -> EnvParam:
-        r"""Returns box parameters."""
-        param = (self.theta_tau, self.change_rate, self.restore_ratio, self.jump_ratio, self.sigma)
-        return param
-
-    def set_param(self, param: EnvParam) -> None:
-        r"""Sets box parameters."""
-        self.theta_tau, self.change_rate, self.restore_ratio, self.jump_ratio, self.sigma = param
-
-    def _tau2cue(self, tau: float) -> int:
-        _cue = 1-stats.gamma.cdf(tau, a=self.k_tau, scale=self.theta_tau)
-        _cue = _cue*self.num_levels-0.5
-        cue = np.floor(_cue).astype(int)
-        cue += int(self.rng.random()<(_cue-cue))
-        cue = np.clip(cue, 0, self.num_levels-1)
-        return cue
-
-    def _cue2tau(self, cue: int) -> float:
-        _cue = (cue+0.5)/self.num_levels
-        tau = stats.gamma.ppf(1-_cue, a=self.k_tau, scale=self.theta_tau)
-        return tau
-
-    def _step(self, push: bool):
-        tau = self._cue2tau(self.cue)
-        if push:
-            if not self.food:
-                tau *= self.jump_ratio
-            self.food = False
+    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
+        if name=='volatility':
+            val, low, high = [self.volatility], [0], [np.inf]
         else:
-            p = 1-np.exp(-self.dt/tau)
-            if self.rng.random()<p:
-                self.food = True
-            p = 1-np.exp(-self.dt*self.change_rate)
-            if self.rng.random()<p:
-                new_tau = self.rng.gamma(self.k_tau, self.theta_tau)
-                tau = np.exp(
-                    (1-self.restore_ratio)*np.log(tau)
-                    +self.restore_ratio*np.log(new_tau)
-                )
-        self.cue = self._tau2cue(tau)
+            val, low, high = super()._get_param(name)
+        return val, low, high
+
+    def _set_param(self, name: str, val: EnvParam) -> None:
+        if name=='volatility':
+            assert len(val)==1
+            self.volatility = val[0]
+        else:
+            super()._set_param(name, val)
+
+    def _step(self, push: bool) -> None:
+        if push: # penalty for incorrect push
+            if not self.food and self.level>0:
+                self.level -= 1
+        else: # box level changes randomly
+            p_change = 1-np.exp(-self.dt*self.volatility)
+            if self.rng.random()<p_change:
+                self.level = self.rng.choice(self.num_levels)
+        super()._step(push)

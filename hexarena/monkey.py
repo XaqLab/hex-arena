@@ -49,9 +49,6 @@ class Monkey:
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
-        # param: (push_cost, turn_price, move_price, look_price)
-        self.param_low = [-np.inf, -np.inf, -np.inf, -np.inf]
-        self.param_high = [np.inf, np.inf, np.inf, np.inf]
         # action: (push, move, look)
         self.action_space = Discrete(self.arena.num_boxes*self.arena.num_tiles+self.arena.num_tiles**2)
 
@@ -71,12 +68,18 @@ class Monkey:
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
-        param = (self.push_cost, self.turn_price, self.move_price, self.look_price)
+        param = [self.push_cost, self.turn_price, self.move_price, self.look_price]
         return param
 
     def set_param(self, param) -> None:
         r"""Sets monkey parameters."""
         self.push_cost, self.turn_price, self.move_price, self.look_price = param
+
+    def param_bounds(self) -> tuple[EnvParam, EnvParam]:
+        # param: (push_cost, turn_price, move_price, look_price)
+        param_low = [-np.inf, -np.inf, -np.inf, -np.inf]
+        param_high = [np.inf, np.inf, np.inf, np.inf]
+        return param_low, param_high
 
     def get_state(self) -> MonkeyState:
         r"""Returns monkey state."""
