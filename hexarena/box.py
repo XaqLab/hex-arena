@@ -67,6 +67,9 @@ class BaseFoodBox:
         self.rng = np.random.default_rng()
         self.param_names = ['sigma']
 
+    def __repr__(self) -> str:
+        return f"Box with {self.num_levels} levels and {self.num_grades} color grades"
+
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         r"""Returns value and bounds of a named parameter.
 
@@ -216,11 +219,16 @@ class PoissonBox(BaseFoodBox):
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
         if taus is None:
-            self.taus = np.full(self.num_levels, fill_value=_rcParams.tau)
+            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.tau
         else:
             self.taus = np.array([*taus])
 
         self.param_names += ['taus']
+
+    def __repr__(self) -> str:
+        return "Box with taus: ({})".format(', '.join([
+            '{:.2g}'.format(tau) for tau in self.taus
+        ]))
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='taus':

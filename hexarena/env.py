@@ -75,6 +75,11 @@ class ForagingEnv(Env):
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
 
+    def __repr__(self) -> str:
+        a_str = str(self.arena)
+        a_str = a_str[0].lower()+a_str[1:]
+        return "Foraging in {} (time step {:.2g} sec)".format(a_str, self.dt)
+
     def _components(self) -> list[Union[Monkey, BaseFoodBox]]:
         r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes

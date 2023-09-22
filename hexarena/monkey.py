@@ -54,6 +54,9 @@ class Monkey:
 
         self.rng = np.random.default_rng()
 
+    def __repr__(self) -> str:
+        return "A monkey with push and moving cost"
+
     def reset(self, seed: Optional[int] = None) -> None:
         r"""Resets the monkey state.
 

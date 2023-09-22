@@ -69,6 +69,9 @@ class Arena:
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
+    def __repr__(self) -> str:
+        return f"Arena of size {self.resol} with {self.num_boxes} boxes"
+
     def plot_mesh(self,
         ax: Axes,
     ) -> None:
