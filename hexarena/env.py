@@ -94,6 +94,7 @@ class ForagingEnv(Env):
             n = len(val)
             val = param[c:c+n]
             x.set_param(val)
+            c += n
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
         r"""Returns lower and upper bound of environment parameters."""
@@ -510,7 +511,7 @@ class ForagingEnv(Env):
         assert len(axes)==self.num_boxes
         if artists is None:
             if p_max is None:
-                p_max = p_boxes.max()
+                p_max = np.nanmax(p_boxes)
             h_boxes = []
             for i, ax in enumerate(axes):
                 h_boxes.append(ax.imshow(
@@ -520,7 +521,7 @@ class ForagingEnv(Env):
                 ax.set_xticks([0, self.boxes[i].num_levels-1])
                 if i==self.num_boxes-1:
                     ax.set_xticklabels(['min', 'max'])
-                    ax.set_xlabel('Box cue', labelpad=-10)
+                    ax.set_xlabel('Box level', labelpad=-10)
                 else:
                     ax.spines['bottom'].set_visible(False)
                     ax.set_xticklabels([])
