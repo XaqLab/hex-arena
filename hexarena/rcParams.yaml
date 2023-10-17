@@ -17,12 +17,12 @@ box:
       dt: 1.0 # sec
       reward: 10.
       num_levels: 3
-      num_grades: 8
+      num_grades: 6
       num_patches: 1
       sigma: 0.05
   PoissonBox:
     _init_:
-      tau: 20 # sec
+      tau: 36. # sec
   VolatileBox:
     _init_:
       volatility: 0.05 # 1/sec

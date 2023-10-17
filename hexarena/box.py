@@ -35,7 +35,7 @@ class BaseFoodBox:
         reward:
             Reward value of food, not considered as a parameter.
         num_levels:
-            Number of cue levels.
+            Number of box quality levels.
         num_grades:
             Number of distinct colors on a color map for discrete values of
             `colors`.
@@ -51,12 +51,12 @@ class BaseFoodBox:
 
         """
         _rcParams = rcParams.get('box.BaseFoodBox._init_', {})
-        self.dt = _rcParams.dt if dt is None else dt
-        self.reward = _rcParams.reward if reward is None else reward
-        self.num_levels = _rcParams.num_levels if num_levels is None else num_levels
-        self.num_grades = _rcParams.num_grades if num_grades is None else num_grades
-        self.num_patches = _rcParams.num_patches if num_patches is None else num_patches
-        self.sigma = _rcParams.sigma if sigma is None else sigma
+        self.dt: float = _rcParams.dt if dt is None else dt
+        self.reward: float = _rcParams.reward if reward is None else reward
+        self.num_levels: int = _rcParams.num_levels if num_levels is None else num_levels
+        self.num_grades: int = _rcParams.num_grades if num_grades is None else num_grades
+        self.num_patches: int = _rcParams.num_patches if num_patches is None else num_patches
+        self.sigma: float = _rcParams.sigma if sigma is None else sigma
 
         self.mat_size = int(self.num_patches**0.5)
         assert self.mat_size**2==self.num_patches, (
@@ -126,12 +126,12 @@ class BaseFoodBox:
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
         r"""Returns lower and upper bound of box parameters."""
-        param_low, param_high = [], []
+        low, high = [], []
         for name in self.param_names:
-            _, low, high = self._get_param(name)
-            param_low += low
-            param_high += high
-        return param_low, param_high
+            _, _low, _high = self._get_param(name)
+            low += [*_low]
+            high += [*_high]
+        return low, high
 
     def get_state(self) -> BoxState:
         r"""Returns box state."""
@@ -200,7 +200,12 @@ class BaseFoodBox:
 
 
 class PoissonBox(BaseFoodBox):
-    r"""Box with food following a Poisson process."""
+    r"""Box with food following a Poisson process.
+
+    Different quality levels are characterized by different parameters of
+    Poisson process.
+
+    """
 
     def __init__(self,
         *,
@@ -212,6 +217,8 @@ class PoissonBox(BaseFoodBox):
         ----
         taus:
             Time constant for Poisson process corresponding to each level.
+        kwargs:
+            Keyword arguments for `BaseFoodBox`.
 
         """
         _rcParams = rcParams.get('box.PoissonBox._init_', {})
@@ -219,9 +226,12 @@ class PoissonBox(BaseFoodBox):
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
         if taus is None:
+            # same tau for all levels
             self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.tau
         else:
+            assert len(taus)==self.num_levels
             self.taus = np.array([*taus])
+        self.taus: Array
 
         self.param_names += ['taus']
 
@@ -255,8 +265,36 @@ class PoissonBox(BaseFoodBox):
                 self.food = True
 
 
+class StationaryBox(PoissonBox):
+    r"""Box with a fixed quality."""
+
+    def __init__(self,
+        tau: float,
+        **kwargs,
+    ):
+        r"""
+        Args
+        ----
+        tau:
+            Time constant for Poisson process corresponding to each level.
+        kwargs:
+            Keyword arguments for `BaseFoodBox`.
+
+        """
+        super().__init__(taus=[tau], num_levels=1, **kwargs)
+
+    def __repr__(self) -> str:
+        return "Box with tau: ({})".format(self.taus[0])
+
+
 class VolatileBox(PoissonBox):
-    r"""Box with volatile qualities."""
+    r"""Box with volatile qualities.
+
+    Box level will change to a random value, with the change happening according
+    to a Poisson process. Incorrect push will lead to a level decrease if
+    possible.
+
+    """
 
     def __init__(self,
         *,
@@ -268,10 +306,13 @@ class VolatileBox(PoissonBox):
         ----
         volatility:
             A positive number describing the level change rate.
+        kwargs:
+            Keyword arguments for `BaseFoodBox`.
 
         """
         _rcParams = rcParams.get('box.VolatileBox._init_', {})
         super().__init__(**kwargs)
+        assert np.all(np.diff(self.taus)<=0), "Box qualities need to be set in increasing order."
         self.volatility = _rcParams.volatility if volatility is None else volatility
 
         self.param_names += ['volatility']

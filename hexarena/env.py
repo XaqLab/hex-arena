@@ -145,8 +145,8 @@ class ForagingEnv(Env):
         r"""Returns observation.
 
         The monkey has full knowledge of its own state, and only the box where
-        the gaze is located gives valid color cues. Colors of other boxes are
-        set to a constant `box.num_patches` to represent 'UNKNOWN'.
+        the gaze is at gives valid color cues. Colors of other boxes are set to
+        a constant `box.num_patches` to represent 'UNKNOWN'.
 
         """
         observation = (*self.monkey.get_state(),)
