@@ -23,6 +23,9 @@ box:
   PoissonBox:
     _init_:
       tau: 36. # sec
+  StationaryBox:
+    _init_:
+      num_levels: 8
   VolatileBox:
     _init_:
       volatility: 0.05 # 1/sec

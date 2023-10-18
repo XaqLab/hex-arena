@@ -226,7 +226,6 @@ class PoissonBox(BaseFoodBox):
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
         if taus is None:
-            # same tau for all levels
             self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.tau
         else:
             assert len(taus)==self.num_levels
@@ -266,25 +265,61 @@ class PoissonBox(BaseFoodBox):
 
 
 class StationaryBox(PoissonBox):
-    r"""Box with a fixed quality."""
+    r"""Box with a fixed quality.
+
+    Box level represents the probability of food presence instead of food appear
+    rate.
+
+    """
 
     def __init__(self,
         tau: float,
+        num_levels: Optional[int] = None,
         **kwargs,
     ):
         r"""
         Args
         ----
         tau:
-            Time constant for Poisson process corresponding to each level.
+            Time constant for every level.
+        num_levels:
+            Number of cue levels instead of quality levels.
         kwargs:
-            Keyword arguments for `BaseFoodBox`.
+            Keyword arguments for `PoissonBox`.
 
         """
-        super().__init__(taus=[tau], num_levels=1, **kwargs)
+        _rcParams = rcParams.get('box.StationaryBox._init_', {})
+        if num_levels is None:
+            num_levels = _rcParams.num_levels
+        super().__init__(taus=[tau]*num_levels, **kwargs)
 
     def __repr__(self) -> str:
         return "Box with tau: ({})".format(self.taus[0])
+
+    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
+        if name=='taus':
+            val = [self.taus[0]]
+            low = [0]
+            high = [np.inf]
+        else:
+            val, low, high = super()._get_param(name)
+        return val, low, high
+
+    def _set_param(self, name: str, val: EnvParam) -> None:
+        if name=='taus':
+            assert len(val)==1
+            super()._set_param('taus', [val[0]]*self.num_levels)
+        else:
+            super()._set_param(name, val)
+
+    def _step(self, push: bool) -> None:
+        super()._step(push)
+        if push: # reset to lowest level
+            self.level = 0
+        else: # level increase approximately according to cumulative probability
+            p = self.rng.uniform(self.level/self.num_levels, (self.level+1)/self.num_levels)
+            p = 1-(1-p)*np.exp(-self.dt/self.taus[0])
+            self.level = int(np.floor(p*self.num_levels))
 
 
 class VolatileBox(PoissonBox):
@@ -307,7 +342,7 @@ class VolatileBox(PoissonBox):
         volatility:
             A positive number describing the level change rate.
         kwargs:
-            Keyword arguments for `BaseFoodBox`.
+            Keyword arguments for `PoissonBox`.
 
         """
         _rcParams = rcParams.get('box.VolatileBox._init_', {})
