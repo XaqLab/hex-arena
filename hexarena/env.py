@@ -59,6 +59,7 @@ class ForagingEnv(Env):
             box = box.instantiate()
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
+        assert len(np.unique([box.mat_size for box in self.boxes]))==1, "Color matrix sizes do not match."
 
         # state: (*monkey_state, *boxes_state)
         self._state_dims, nvec = (), ()
@@ -70,7 +71,7 @@ class ForagingEnv(Env):
         # observation: (*monkey_state, *boxes_colors)
         nvec = (*self.monkey.state_space.nvec,)
         for box in self.boxes:
-            nvec += (box.num_grades+1,)*box.num_patches # additional grade for invisible
+            nvec += (box.num_grades+1,)*box.num_patches # additional grade for "not looked at"
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
@@ -232,20 +233,20 @@ class ForagingEnv(Env):
                 box.append(-1)
         push = np.array(push, dtype=bool)
         success = np.array(success, dtype=bool)
+        box = np.array(box, dtype=int)
 
         # actual colors are not provided in the raw data, will use a uniform
         # patch estimated from the cumulative cue
         colors = []
-        _color_size = int(self.boxes[0].num_patches**0.5)
+        mat_size = self.boxes[0].mat_size
         for i in range(num_steps+1):
             _cues = block_data['cues'][(t>=i*self.dt)&(t<(i+1)*self.dt), :].mean(axis=0)
             _cues = np.floor(_cues*np.array([box.num_grades for box in self.boxes]))
-            colors.append(np.tile(_cues[:, None, None], (1, _color_size, _color_size)))
+            colors.append(np.tile(_cues[:, None, None], (1, mat_size, mat_size)))
         colors = np.array(colors, dtype=int)
 
         env_data = {
-            'num_steps': num_steps,
-            'pos': pos, 'gaze': gaze,
+            'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
             'push': push, 'success': success, 'box': box,
             'colors': colors,
         }
