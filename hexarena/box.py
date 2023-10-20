@@ -226,7 +226,7 @@ class PoissonBox(BaseFoodBox):
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
         if taus is None:
-            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.tau
+            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.max_tau
         else:
             assert len(taus)==self.num_levels
             self.taus = np.array([*taus])
@@ -273,7 +273,7 @@ class StationaryBox(PoissonBox):
     """
 
     def __init__(self,
-        tau: float,
+        tau: Optional[float] = None,
         num_levels: Optional[int] = None,
         **kwargs,
     ):
@@ -289,6 +289,7 @@ class StationaryBox(PoissonBox):
 
         """
         _rcParams = rcParams.get('box.StationaryBox._init_', {})
+        tau = _rcParams.tau if tau is None else tau
         if num_levels is None:
             num_levels = _rcParams.num_levels
         super().__init__(taus=[tau]*num_levels, **kwargs)

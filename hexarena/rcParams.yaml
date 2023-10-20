@@ -22,9 +22,10 @@ box:
       sigma: 0.05
   PoissonBox:
     _init_:
-      tau: 36. # sec
+      max_tau: 36. # sec
   StationaryBox:
     _init_:
+      tau: 24. # sec
       num_levels: 8
   VolatileBox:
     _init_:

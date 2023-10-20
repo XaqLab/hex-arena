@@ -1,20 +1,15 @@
 import numpy as np
 import torch
 from gymnasium import Env
-from gymnasium.spaces import Discrete, MultiDiscrete
+from gymnasium.spaces import MultiDiscrete
 from jarvis.config import Config
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, Rectangle
 from matplotlib.animation import FuncAnimation
-from stable_baselines3 import PPO
 
 from typing import Optional, Union
-from collections.abc import Collection, Sequence
-from irc.distribution import BaseDistribution, CompositeDistribution
+from collections.abc import Collection
+from irc.distribution import CompositeDistribution
 from irc.buffer import Episode
-
-from hexarena.alias import EnvParam
 
 from . import rcParams
 from .arena import Arena
@@ -22,7 +17,7 @@ from .box import BaseFoodBox
 from .monkey import Monkey
 from .alias import (
     EnvParam, Observation, State,
-    Figure, Axes, Artist, Array, Tensor,
+    Figure, Axes, Artist, Array,
 )
 
 class ForagingEnv(Env):
