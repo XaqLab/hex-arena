@@ -320,7 +320,7 @@ class StationaryBox(PoissonBox):
         else: # level increase approximately according to cumulative probability
             p = self.rng.uniform(self.level/self.num_levels, (self.level+1)/self.num_levels)
             p = 1-(1-p)*np.exp(-self.dt/self.taus[0])
-            self.level = int(np.floor(p*self.num_levels))
+            self.level = min(int(np.floor(p*self.num_levels)), self.num_levels-1)
 
 
 class VolatileBox(PoissonBox):
