@@ -5,7 +5,31 @@ import numpy as np
 def load_monkey_data(filename, block_idx: int) -> dict:
     r"""Loads one block data from mat file.
 
-    Compatible with 'monkey-data_04052023/testSession2.mat'.
+    Compatible with 'monkey-data_04052023/testSession2.mat', see `dataset_info.rtf`
+    for more details.
+
+    Args
+    ----
+    filename:
+        Path to data file.
+    block_idx:
+        Index of experiment block, ranging in [0, 7).
+
+    Returns
+    -------
+    block_data:
+        A dictionary containing raw data, time unit is 'sec' and space unit is
+        `mm`. It contains keys:
+        - `t`: (num_steps,). Time axis of the block.
+        - `pos_xyz`: (num_steps, 3). 3D coordinates of the monkey position.
+        - `gaze_xyz`: (num_steps, 3). 3D coordinates of the monkey gaze.
+        - `cues`: (3, num_steps). Color cue values for three boxes.
+        - `push_t`: (num_events,). Time of push events.
+        - `push_id`: (num_events,). Box ID of each push, in [1, 3].
+        - `push_flag`: (num_events,). Whether a reward is obtained of each push.
+        - `kappas`: (3,). Noise level of each box.
+        - `taus`: (3,). Time constants of exponential distribution of reward
+            intervals.
 
     """
     block_data = {}
