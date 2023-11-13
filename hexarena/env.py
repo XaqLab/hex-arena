@@ -247,8 +247,8 @@ class ForagingEnv(Env):
         }
         return env_data
 
-    def extract_observation_and_action(self, env_data: dict) -> tuple[Array, Array]:
-        r"""Extract observation and action sequences.
+    def extract_observation_action_reward(self, env_data: dict) -> tuple[Array, Array, Array]:
+        r"""Extract observation, action and reward sequences.
 
         Data gaps will be filled from previous frames. Colors of the boxes that
         are not being looked at will be marked with `num_grades` to represent
@@ -266,6 +266,8 @@ class ForagingEnv(Env):
             colors of food boxes.
         actions: (num_steps,) int
             Actions by the monkey.
+        rewards: (num_steps,) float
+            Rewards computed based on monkey action and push outcomes.
 
         """
         num_steps = env_data['num_steps']
@@ -302,7 +304,21 @@ class ForagingEnv(Env):
             actions[t] = self.monkey.index_action(
                 env_data['push'][t], pos, observations[t+1, 1],
             )
-        return observations, actions
+
+        rewards = np.empty((num_steps,), dtype=float)
+        for t in range(num_steps):
+            pos, gaze = env_data['pos'][t], env_data['gaze'][t]
+            self.monkey.set_state((pos, gaze))
+            push, move, look = env_data['push'][t], env_data['pos'][t+1], env_data['gaze'][t+1]
+            reward = self.monkey.step(push, move, look)
+            reward += -self.time_cost
+            if env_data['success'][t]:
+                for box in self.boxes:
+                    if move==box.pos:
+                        reward += box.reward
+            rewards[t] = reward
+
+        return observations, actions, rewards
 
     def convert_episode(self,
         episode: Episode,
