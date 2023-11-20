@@ -538,12 +538,15 @@ class ForagingEnv(Env):
                 ax.set_xticks([0, self.boxes[i].num_levels-1])
                 if i==self.num_boxes-1:
                     ax.set_xticklabels(['min', 'max'])
-                    ax.set_xlabel('Box level', labelpad=-10)
+                    ax.set_xlabel('Cue level', labelpad=-10)
                 else:
                     ax.spines['bottom'].set_visible(False)
                     ax.set_xticklabels([])
                 ax.set_yticks([0, 1])
-                ax.set_yticklabels(['F', 'T'])
+                ax.set_yticklabels(
+                    ['Empty', 'Food'], fontsize='xx-small',
+                    rotation=90, va='center',
+                )
                 ax.set_ylabel('Box {}'.format(i+1))
             artists = h_boxes
         else:

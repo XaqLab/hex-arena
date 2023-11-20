@@ -82,10 +82,6 @@ class Arena:
             color='darkgray', linewidth=3, zorder=0
         )
         ax.scatter(
-            _anchors[:, 0], _anchors[:, 1],
-            s=40, marker='X', color='yellow',
-        )
-        ax.scatter(
             _anchors[self.boxes, 0], _anchors[self.boxes, 1], s=120,
             marker='o', facecolors='none', edgecolors='lime', linewidths=2,
         )
