@@ -8,7 +8,7 @@ from matplotlib.animation import FuncAnimation
 
 from typing import Optional, Union
 from collections.abc import Collection
-from irc.distribution import CompositeDistribution
+from irc.dist.distribution import CompositeDistribution
 from irc.buffer import Episode
 
 from . import rcParams
@@ -70,6 +70,8 @@ class ForagingEnv(Env):
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
+        # monkey state is fully observable to itself
+        self.known_dim = len(self.monkey.state_space.nvec)
 
     def __repr__(self) -> str:
         a_str = str(self.arena)

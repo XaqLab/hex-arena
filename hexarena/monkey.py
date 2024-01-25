@@ -163,9 +163,8 @@ class Monkey:
 
         Args
         ----
-        action:
-            An integer in [0, num_tiles^2]. `action==_push` means push the
-            button of food box, other values represents the (move, look) pair.
+        push, move, look:
+            See `convert_action` for more details.
 
         Returns
         -------
