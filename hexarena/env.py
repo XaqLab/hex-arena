@@ -56,18 +56,17 @@ class ForagingEnv(Env):
             self.boxes.append(box)
         assert len(np.unique([box.mat_size for box in self.boxes]))==1, "Color matrix sizes do not match."
 
-        # state: (*boxes_state, *monkey_state)
+        # state: (*monkey_state, *boxes_state)
         self._state_dims, nvec = (), ()
         for x in self._components():
             _nvec = x.state_space.nvec
             self._state_dims += (len(_nvec),)
             nvec += (*_nvec,)
         self.state_space = MultiDiscrete(nvec)
-        # observation: (*boxes_colors, *monkey_state)
-        nvec = ()
+        # observation: (*monkey_state, *boxes_colors)
+        nvec = (*self.monkey.state_space.nvec,)
         for box in self.boxes:
             nvec += (box.num_grades+1,)*box.num_patches # additional grade for "not looked at"
-        nvec += (*self.monkey.state_space.nvec,)
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
@@ -79,9 +78,9 @@ class ForagingEnv(Env):
         a_str = a_str[0].lower()+a_str[1:]
         return "Foraging in {} (time step {:.2g} sec)".format(a_str, self.dt)
 
-    def _components(self) -> list[BaseFoodBox|Monkey]:
+    def _components(self) -> list[Union[Monkey, BaseFoodBox]]:
         r"""Returns a list of environment components."""
-        return self.boxes+[self.monkey]
+        return [self.monkey]+self.boxes
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
@@ -148,14 +147,13 @@ class ForagingEnv(Env):
         a constant `box.num_patches` to represent 'UNKNOWN'.
 
         """
-        observation = ()
+        observation = (*self.monkey.get_state(),)
         for box in self.boxes:
             if self.monkey.gaze==box.pos:
                 colors = box.colors.reshape(-1)
             else:
                 colors = np.full((box.num_patches,), fill_value=box.num_grades, dtype=int)
             observation += (*colors,)
-        observation += (*self.monkey.get_state(),)
         return observation
 
     def _get_info(self) -> dict:
@@ -386,7 +384,6 @@ class ForagingEnv(Env):
         foods = np.array(foods).astype(bool)
         colors = np.array(colors).astype(int)
         counts = np.stack(counts).astype(int)
-        raise NotImplementedError
         # extract beliefs about boxes from agent view
         if p_s is None:
             p_boxes = None
