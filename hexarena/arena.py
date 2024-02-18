@@ -3,10 +3,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
-from typing import Optional
 from collections.abc import Collection
 
-from . import rcParams
 from .alias import Axes, Artist
 
 
@@ -21,7 +19,7 @@ class Arena:
     """
 
     def __init__(self,
-        resol: Optional[int] = None,
+        resol: int = 2,
     ):
         r"""
         Args
@@ -31,8 +29,7 @@ class Arena:
             anchors: six at the corner and one at the center.
 
         """
-        _rcParams = rcParams.get('arena.Arena._init_', {})
-        self.resol: int = _rcParams.resol if resol is None else resol
+        self.resol = resol
         assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
@@ -71,6 +68,13 @@ class Arena:
 
     def __repr__(self) -> str:
         return f"Arena of size {self.resol} with {self.num_boxes} boxes"
+
+    @property
+    def spec(self) -> dict:
+        return {
+            '_target_': 'hexarena.arena.Arena',
+            'resol': self.resol,
+        }
 
     def plot_mesh(self,
         ax: Axes,
@@ -115,8 +119,8 @@ class Arena:
 
     def plot_tile(self,
         ax: Axes,
-        tile_idx: Optional[int], color = 'none',
-        h_tile: Optional[Artist] = None,
+        tile_idx: int|None, color = 'none',
+        h_tile: Artist|None = None,
     ) -> Artist:
         if tile_idx is None:
             xy = np.full((1, 2), fill_value=np.nan)
@@ -139,9 +143,9 @@ class Arena:
         vals: Collection[float],
         cmap: str = 'YlOrBr',
         vmin: float = 0,
-        vmax: Optional[float] = None,
+        vmax: float|None = None,
         clabel: str = '',
-        h_tiles: Optional[list[Artist]] = None,
+        h_tiles: list[Artist]|None = None,
     ):
         r"""Plots heat map over the arena.
 

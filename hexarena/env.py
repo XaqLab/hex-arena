@@ -6,10 +6,9 @@ from jarvis.config import Config
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from typing import Optional, Union
 from collections.abc import Collection
 from irc.dist.distribution import CompositeDistribution
-from irc.buffer import Episode
+from irc.episode import Episode
 
 from . import rcParams
 from .arena import Arena
@@ -25,15 +24,15 @@ class ForagingEnv(Env):
 
     def __init__(self,
         *,
-        arena: Optional[dict] = None,
-        monkey: Optional[dict] = None,
-        boxes: Optional[list[Optional[dict]]] = None,
-        time_cost: Optional[float] = None,
-        dt: Optional[float] = None,
+        arena: dict|None = None,
+        monkey: dict|None = None,
+        boxes: list[dict|None]|None = None,
+        time_cost: float = 0.,
+        dt: float = 1.,
     ):
         _rcParams = rcParams.get('env.ForagingEnv._init_', {})
-        self.time_cost = _rcParams.time_cost if time_cost is None else time_cost
-        self.dt = _rcParams.dt if dt is None else dt
+        self.time_cost = time_cost
+        self.dt = dt
 
         arena = Config(arena).fill(_rcParams.arena)
         self.arena: Arena = arena.instantiate()
@@ -70,15 +69,23 @@ class ForagingEnv(Env):
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
-        # monkey state is fully observable to itself
-        self.known_dim = len(self.monkey.state_space.nvec)
 
     def __repr__(self) -> str:
         a_str = str(self.arena)
         a_str = a_str[0].lower()+a_str[1:]
         return "Foraging in {} (time step {:.2g} sec)".format(a_str, self.dt)
 
-    def _components(self) -> list[Union[Monkey, BaseFoodBox]]:
+    @property
+    def spec(self) -> dict:
+        return {
+            '_target_': 'hexarena.env.ForagingEnv',
+            'arena': self.arena.spec,
+            'monkey': self.monkey.spec,
+            'boxes': [box.spec for box in self.boxes],
+            'time_cost': self.time_cost, 'dt': self.dt,
+        }
+
+    def _components(self) -> list[Monkey|BaseFoodBox]:
         r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes
 
@@ -122,7 +129,7 @@ class ForagingEnv(Env):
             x.set_state([state[i] for i in range(idx, idx+state_dim)])
             idx += state_dim
 
-    def reset(self, seed: Optional[int] = None) -> tuple[Observation, dict]:
+    def reset(self, seed: int|None = None) -> tuple[Observation, dict]:
         for i, x in enumerate(self._components()):
             x.reset(None if seed is None else seed+i)
         observation = self._get_observation()
@@ -324,8 +331,8 @@ class ForagingEnv(Env):
 
     def convert_episode(self,
         episode: Episode,
-        p_s: Optional[CompositeDistribution] = None,
-    ) -> tuple[Array, Array, list[Optional[bool]], Array, Array, Array, Optional[Array]]:
+        p_s: CompositeDistribution|None = None,
+    ) -> tuple[Array, Array, list[bool|None], Array, Array, Array, Array|None]:
         r"""Converts episode data to interpretable variables.
 
         Args
@@ -343,7 +350,7 @@ class ForagingEnv(Env):
         pos, gaze: int, (num_steps+1,)
             Tile indices for monkey position and gaze.
         rewarded: (num_steps+1,)
-            Whether the agent is rewarded.
+            Whether the agent is rewarded, ``None`` stands for no push.
         foods: bool, (num_steps+1, num_boxes)
             Food status for all boxes.
         colors: int, (num_steps+1, num_boxes, mat_size, mat_size)
@@ -405,9 +412,9 @@ class ForagingEnv(Env):
         return pos, gaze, rewarded, foods, colors, counts, p_boxes
 
     def plot_arena(self,
-        ax: Axes, pos: int, gaze: int, rewarded: Optional[bool],
-        foods: Optional[Array], colors: Optional[Array], counts: Optional[Array],
-        artists: Optional[list[Artist]] = None,
+        ax: Axes, pos: int, gaze: int, rewarded: bool|None,
+        foods: Array|None, colors: Array|None, counts: Array|None,
+        artists: list[Artist]|None = None,
     ) -> list[Artist]:
         r"""Plots experimenter view of one step.
 
@@ -501,8 +508,8 @@ class ForagingEnv(Env):
         return artists
 
     def plot_beliefs(self,
-        axes: Collection[Axes], p_boxes: Array, p_max: Optional[float] = None,
-        artists: Optional[list[Artist]] = None,
+        axes: Collection[Axes], p_boxes: Array, p_max: float|None = None,
+        artists: list[Artist]|None = None,
     ) -> list[Artist]:
         r"""Plots agent view of one step.
 
@@ -559,8 +566,8 @@ class ForagingEnv(Env):
 
     def play_episode(self,
         pos, gaze, rewarded=None, foods=None, colors=None, counts=None, p_boxes=None,
-        tmin: Optional[int] = None, tmax: Optional[int] = None,
-        figsize: tuple[float, float] = None,
+        tmin: int|None = None, tmax: int|None = None,
+        figsize: tuple[float, float]|None = None,
         use_sec: bool = True,
     ) -> tuple[Figure, FuncAnimation]:
         r"""Creates animation of one episode.
@@ -645,9 +652,9 @@ class ForagingEnv(Env):
 
     def play_traces(self,
         vals, num_steps = None,
-        figsize: tuple[float, float] = None,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
+        figsize: tuple[float, float]|None = None,
+        xlabel: str|None = None,
+        ylabel: str|None = None,
         show_legend: bool = True,
         use_sec: bool = True,
     ) -> tuple[Figure, FuncAnimation]:

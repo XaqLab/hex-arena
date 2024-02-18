@@ -1,41 +1,11 @@
-arena:
-  Arena:
-    _init_:
-      resol: 2
-
-monkey:
-  Monkey:
-    _init_:
-      push_cost: 1.
-      turn_price: 0.001 # deg^{-1}
-      move_price: 0.
-      look_price: 0.001 # deg^{-1}
-
 box:
-  BaseFoodBox:
-    _init_:
-      dt: 1.0 # sec
-      reward: 10.
-      num_levels: 3
-      num_grades: 6
-      num_patches: 1
-      sigma: 0.05
   PoissonBox:
     _init_:
       max_tau: 36. # sec
-  StationaryBox:
-    _init_:
-      tau: 24. # sec
-      num_levels: 8
-  VolatileBox:
-    _init_:
-      volatility: 0.05 # 1/sec
 
 env:
   ForagingEnv:
     _init_:
-      time_cost: 0.
-      dt: 1.0 # sec
       arena:
         _target_: hexarena.arena.Arena
       monkey:

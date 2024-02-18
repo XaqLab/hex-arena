@@ -2,9 +2,6 @@ import numpy as np
 from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
-from typing import Optional, Union
-
-from . import rcParams
 from .arena import Arena
 from .alias import EnvParam, MonkeyState
 
@@ -12,11 +9,11 @@ class Monkey:
     r"""Class for the monkey in an arena."""
 
     def __init__(self,
-        arena: Union[Arena, dict, None] = None,
-        push_cost: Optional[float] = None,
-        turn_price: Optional[float] = None,
-        move_price: Optional[float] = None,
-        look_price: Optional[float] = None,
+        arena: Arena|dict|None = None,
+        push_cost: float = 1.,
+        turn_price: float = 0.001,
+        move_price: float = 0.,
+        look_price: float = 0.001,
     ):
         r"""
         Args
@@ -36,16 +33,15 @@ class Monkey:
             turning angle after moving to get looking cost.
 
         """
-        _rcParams = Config(rcParams.get('monkey.Monkey._init_'))
         if arena is None or isinstance(arena, dict):
             arena = Config(arena)
             arena._target_ = 'hexarena.arena.Arena'
             arena = arena.instantiate()
         self.arena: Arena = arena
-        self.push_cost: float = _rcParams.push_cost if push_cost is None else push_cost
-        self.turn_price: float = _rcParams.turn_price if turn_price is None else turn_price
-        self.move_price: float = _rcParams.move_price if move_price is None else move_price
-        self.look_price: float = _rcParams.look_price if look_price is None else look_price
+        self.push_cost = push_cost
+        self.turn_price = turn_price
+        self.move_price = move_price
+        self.look_price = look_price
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
@@ -57,7 +53,17 @@ class Monkey:
     def __repr__(self) -> str:
         return "A monkey with push and moving cost"
 
-    def reset(self, seed: Optional[int] = None) -> None:
+    @property
+    def spec(self) -> dict:
+        return {
+            '_target_': 'hexarena.monkey.Monkey',
+            'push_cost': self.push_cost,
+            'turn_price': self.turn_price,
+            'move_price': self.move_price,
+            'look_price': self.look_price,
+        }
+
+    def reset(self, seed: int|None = None) -> None:
         r"""Resets the monkey state.
 
         Put the monkey on the outer region randomly, and sets up the gaze
@@ -93,7 +99,7 @@ class Monkey:
         r"""Sets the monkey state."""
         self.pos, self.gaze = state
 
-    def _direction(self, end: int, start: int) -> Optional[float]:
+    def _direction(self, end: int, start: int) -> float|None:
         if end==start:
             theta = None
         else:

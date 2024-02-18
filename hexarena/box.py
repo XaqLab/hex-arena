@@ -20,12 +20,12 @@ class BaseFoodBox:
 
     def __init__(self,
         *,
-        dt: Optional[float] = None,
-        reward: Optional[float] = None,
-        num_levels: Optional[int] = None,
-        num_grades: Optional[int] = None,
-        num_patches: Optional[int] = None,
-        sigma: Optional[float] = None,
+        dt: float = 1.,
+        reward: float = 10.,
+        num_levels: int = 3,
+        num_grades: int = 6,
+        num_patches: int = 1,
+        sigma: float = 0.05,
     ):
         r"""
         Args
@@ -50,13 +50,12 @@ class BaseFoodBox:
             is determined by sigma. See `render` for more details.
 
         """
-        _rcParams = rcParams.get('box.BaseFoodBox._init_', {})
-        self.dt: float = _rcParams.dt if dt is None else dt
-        self.reward: float = _rcParams.reward if reward is None else reward
-        self.num_levels: int = _rcParams.num_levels if num_levels is None else num_levels
-        self.num_grades: int = _rcParams.num_grades if num_grades is None else num_grades
-        self.num_patches: int = _rcParams.num_patches if num_patches is None else num_patches
-        self.sigma: float = _rcParams.sigma if sigma is None else sigma
+        self.dt = dt
+        self.reward = reward
+        self.num_levels = num_levels
+        self.num_grades = num_grades
+        self.num_patches = num_patches
+        self.sigma = sigma
 
         self.mat_size = int(self.num_patches**0.5)
         assert self.mat_size**2==self.num_patches, (
@@ -64,11 +63,22 @@ class BaseFoodBox:
         )
 
         self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
+
         self.rng = np.random.default_rng()
         self.param_names = ['sigma']
 
     def __repr__(self) -> str:
         return f"Box with {self.num_levels} levels and {self.num_grades} color grades"
+
+    @property
+    def spec(self) -> dict:
+        return {
+            'dt': self.dt, 'reward': self.reward,
+            'num_levels': self.num_levels,
+            'num_grades': self.num_grades,
+            'num_patches': self.num_patches,
+            'sigma': self.sigma,
+        }
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         r"""Returns value and bounds of a named parameter.
@@ -157,7 +167,7 @@ class BaseFoodBox:
             p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
         )
 
-    def reset(self, seed: Optional[int] = None) -> None:
+    def reset(self, seed: int|None = None) -> None:
         r"""Resets box state.
 
         Args
@@ -209,7 +219,7 @@ class PoissonBox(BaseFoodBox):
 
     def __init__(self,
         *,
-        taus: Optional[Collection[float]] = None,
+        taus: Collection[float]|None = None,
         **kwargs,
     ):
         r"""
@@ -238,6 +248,15 @@ class PoissonBox(BaseFoodBox):
         return "Box with taus: ({})".format(', '.join([
             '{:.2g}'.format(tau) for tau in self.taus
         ]))
+
+    @property
+    def spec(self) -> dict:
+        spec = super().spec
+        spec.update({
+            '_target_': 'hexarena.box.PoissonBox',
+            'taus': self.taus,
+        })
+        return spec
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='taus':
@@ -273,8 +292,8 @@ class StationaryBox(PoissonBox):
     """
 
     def __init__(self,
-        tau: Optional[float] = None,
-        num_levels: Optional[int] = None,
+        tau: float = 24.,
+        num_levels: int = 8,
         **kwargs,
     ):
         r"""
@@ -288,14 +307,20 @@ class StationaryBox(PoissonBox):
             Keyword arguments for `PoissonBox`.
 
         """
-        _rcParams = rcParams.get('box.StationaryBox._init_', {})
-        tau = _rcParams.tau if tau is None else tau
-        if num_levels is None:
-            num_levels = _rcParams.num_levels
         super().__init__(taus=[tau]*num_levels, **kwargs)
 
     def __repr__(self) -> str:
         return "Box with tau: ({})".format(self.taus[0])
+
+    @property
+    def spec(self) -> dict:
+        spec = super().spec
+        tau = spec.pop('taus')[0]
+        spec.update({
+            '_target_': 'hexarena.box.StationaryBox',
+            'tau': tau,
+        })
+        return spec
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='taus':
@@ -334,7 +359,7 @@ class VolatileBox(PoissonBox):
 
     def __init__(self,
         *,
-        volatility: Optional[float] = None,
+        volatility: float = 0.05,
         **kwargs,
     ):
         r"""
@@ -346,12 +371,20 @@ class VolatileBox(PoissonBox):
             Keyword arguments for `PoissonBox`.
 
         """
-        _rcParams = rcParams.get('box.VolatileBox._init_', {})
         super().__init__(**kwargs)
         assert np.all(np.diff(self.taus)<=0), "Box qualities need to be set in increasing order."
-        self.volatility = _rcParams.volatility if volatility is None else volatility
+        self.volatility = volatility
 
         self.param_names += ['volatility']
+
+    @property
+    def spec(self) -> dict:
+        spec = super().spec
+        spec.update({
+            '_target_': 'hexarena.box.VolatileBox',
+            'volatility': self.volatility,
+        })
+        return spec
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='volatility':
