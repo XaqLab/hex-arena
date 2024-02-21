@@ -3,7 +3,7 @@ from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
 from .arena import Arena
-from .alias import EnvParam, MonkeyState
+from .alias import EnvParam, MonkeyState, RandGen
 
 class Monkey:
     r"""Class for the monkey in an arena."""
@@ -14,6 +14,7 @@ class Monkey:
         turn_price: float = 0.001,
         move_price: float = 0.,
         look_price: float = 0.001,
+        rng: RandGen|int|None = None,
     ):
         r"""
         Args
@@ -48,7 +49,7 @@ class Monkey:
         # action: (push, move, look)
         self.action_space = Discrete(self.arena.num_boxes*self.arena.num_tiles+self.arena.num_tiles**2)
 
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(rng)
 
     def __repr__(self) -> str:
         return "A monkey with push and moving cost"

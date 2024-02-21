@@ -12,11 +12,11 @@ from irc.episode import Episode
 
 from . import rcParams
 from .arena import Arena
-from .box import BaseFoodBox
 from .monkey import Monkey
+from .box import BaseFoodBox
 from .alias import (
     EnvParam, Observation, State,
-    Figure, Axes, Artist, Array,
+    Figure, Axes, Artist, Array, RandGen,
 )
 
 class ForagingEnv(Env):
@@ -24,21 +24,30 @@ class ForagingEnv(Env):
 
     def __init__(self,
         *,
-        arena: dict|None = None,
-        monkey: dict|None = None,
-        boxes: list[dict|None]|None = None,
+        arena: Arena|dict|None = None,
+        monkey: Monkey|dict|None = None,
+        boxes: list[BaseFoodBox|dict|None]|None = None,
         time_cost: float = 0.,
         dt: float = 1.,
+        rng: RandGen|int|None = None,
     ):
         _rcParams = rcParams.get('env.ForagingEnv._init_', {})
         self.time_cost = time_cost
         self.dt = dt
+        self.rng = np.random.default_rng(rng)
 
-        arena = Config(arena).fill(_rcParams.arena)
-        self.arena: Arena = arena.instantiate()
+        if isinstance(arena, Arena):
+            self.arena = arena
+        else:
+            arena = Config(arena).fill(_rcParams.arena)
+            self.arena: Arena = arena.instantiate()
 
-        monkey = Config(monkey).fill(_rcParams.monkey)
-        self.monkey: Monkey = monkey.instantiate(arena=self.arena)
+        if isinstance(monkey, Monkey):
+            self.monkey = monkey
+        else:
+            monkey = Config(monkey).fill(_rcParams.monkey)
+            self.monkey: Monkey = monkey.instantiate(arena=self.arena)
+        self.monkey.rng = self.rng
 
         self.num_boxes = self.arena.num_boxes
         if boxes is None:
@@ -48,9 +57,13 @@ class ForagingEnv(Env):
         assert len(boxes)==self.num_boxes
         self.boxes: list[BaseFoodBox] = []
         for i in range(self.num_boxes):
-            box = Config(boxes[i]).fill(_rcParams.box)
+            if isinstance(boxes[i], BaseFoodBox):
+                box = boxes[i]
+            else:
+                box = Config(boxes[i]).fill(_rcParams.box)
+                box: BaseFoodBox = box.instantiate()
             box.dt = self.dt
-            box = box.instantiate()
+            box.rng = self.rng
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
         assert len(np.unique([box.mat_size for box in self.boxes]))==1, "Color matrix sizes do not match."
@@ -69,6 +82,8 @@ class ForagingEnv(Env):
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
+        # monkey state is fully observable to itself
+        self.known_dim = len(self.monkey.state_space.nvec)
 
     def __repr__(self) -> str:
         a_str = str(self.arena)
@@ -130,8 +145,10 @@ class ForagingEnv(Env):
             idx += state_dim
 
     def reset(self, seed: int|None = None) -> tuple[Observation, dict]:
-        for i, x in enumerate(self._components()):
-            x.reset(None if seed is None else seed+i)
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        for x in self._components():
+            x.reset()
         observation = self._get_observation()
         info = self._get_info()
         return observation, info

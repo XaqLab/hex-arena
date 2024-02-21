@@ -2,13 +2,12 @@ import numpy as np
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
 
-from typing import Optional
 from collections.abc import Collection
 
 from hexarena.alias import EnvParam
 
 from . import rcParams
-from .alias import Array, BoxState, EnvParam
+from .alias import Array, BoxState, EnvParam, RandGen
 
 
 class BaseFoodBox:
@@ -26,6 +25,7 @@ class BaseFoodBox:
         num_grades: int = 6,
         num_patches: int = 1,
         sigma: float = 0.05,
+        rng: RandGen|int|None = None,
     ):
         r"""
         Args
@@ -64,7 +64,7 @@ class BaseFoodBox:
 
         self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
 
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(rng)
         self.param_names = ['sigma']
 
     def __repr__(self) -> str:
