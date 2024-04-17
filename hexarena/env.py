@@ -47,7 +47,6 @@ class ForagingEnv(Env):
         else:
             monkey = Config(monkey).fill(_rcParams.monkey)
             self.monkey: Monkey = monkey.instantiate(arena=self.arena)
-        self.monkey.rng = self.rng
 
         self.num_boxes = self.arena.num_boxes
         if boxes is None:
@@ -63,7 +62,6 @@ class ForagingEnv(Env):
                 box = Config(boxes[i]).fill(_rcParams.box)
                 box: BaseFoodBox = box.instantiate()
             box.dt = self.dt
-            box.rng = self.rng
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
         assert len(np.unique([box.mat_size for box in self.boxes]))==1, "Color matrix sizes do not match."
@@ -148,7 +146,7 @@ class ForagingEnv(Env):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         for x in self._components():
-            x.reset()
+            x.reset(self.rng)
         observation = self._get_observation()
         info = self._get_info()
         return observation, info

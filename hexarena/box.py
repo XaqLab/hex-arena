@@ -167,7 +167,7 @@ class BaseFoodBox:
             p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
         )
 
-    def reset(self, seed: int|None = None) -> None:
+    def reset(self, seed: RandGen|int|None = None) -> None:
         r"""Resets box state.
 
         Args

@@ -64,7 +64,7 @@ class Monkey:
             'look_price': self.look_price,
         }
 
-    def reset(self, seed: int|None = None) -> None:
+    def reset(self, seed: RandGen|int|None = None) -> None:
         r"""Resets the monkey state.
 
         Put the monkey on the outer region randomly, and sets up the gaze
