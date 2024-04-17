@@ -47,5 +47,6 @@ def load_monkey_data(filename, block_idx: int) -> dict:
 
         block = f[f['block']['params'][block_idx][0]]
         block_data['kappas'] = np.array(block['kappa']).squeeze()
-        block_data['taus'] = np.array(block['schedules']).squeeze()
+        tau2, tau0, tau1 = np.array(block['schedules']).squeeze()
+        block_data['taus'] = np.array([tau0, tau1, tau2])
     return block_data
