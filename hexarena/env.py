@@ -73,10 +73,11 @@ class ForagingEnv(Env):
             self._state_dims += (len(_nvec),)
             nvec += (*_nvec,)
         self.state_space = MultiDiscrete(nvec)
-        # observation: (*monkey_state, *boxes_colors)
+        # observation: (*monkey_state, *boxes_colors, rewarded)
         nvec = (*self.monkey.state_space.nvec,)
         for box in self.boxes:
             nvec += (box.num_grades+1,)*box.num_patches # additional grade for "not looked at"
+        nvec += (2,)
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
@@ -147,7 +148,7 @@ class ForagingEnv(Env):
             self.rng = np.random.default_rng(seed)
         for x in self._components():
             x.reset(self.rng)
-        observation = self._get_observation()
+        observation = self._get_observation(False)
         info = self._get_info()
         return observation, info
 
@@ -155,13 +156,16 @@ class ForagingEnv(Env):
         reward, terminated, truncated = -self.time_cost, False, False
         push, move, look = self.monkey.convert_action(action)
         reward += self.monkey.step(push, move, look)
+        rewarded = False
         for box in self.boxes:
-            reward += box.step(push and move==box.pos)
-        observation = self._get_observation()
+            _reward = box.step(push and move==box.pos)
+            reward += _reward
+            rewarded |= _reward>0
+        observation = self._get_observation(rewarded)
         info = self._get_info()
         return observation, reward, terminated, truncated, info
 
-    def _get_observation(self) -> Observation:
+    def _get_observation(self, rewarded: bool) -> Observation:
         r"""Returns observation.
 
         The monkey has full knowledge of its own state, and only the box where
@@ -176,6 +180,7 @@ class ForagingEnv(Env):
             else:
                 colors = np.full((box.num_patches,), fill_value=box.num_grades, dtype=int)
             observation += (*colors,)
+        observation += (int(rewarded),)
         return observation
 
     def _get_info(self) -> dict:
@@ -318,6 +323,8 @@ class ForagingEnv(Env):
                     colors = box.num_grades
                 observations[t, i:(i+box.num_patches)] = colors
                 i += box.num_patches
+            i = 5
+            observations[t, i] = int(t>0 and env_data['success'][t-1])
 
         actions = np.empty((num_steps,), dtype=int)
         for t in range(num_steps):
