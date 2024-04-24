@@ -29,12 +29,10 @@ class ForagingEnv(Env):
         boxes: list[BaseFoodBox|dict|None]|None = None,
         time_cost: float = 0.,
         dt: float = 1.,
-        rng: RandGen|int|None = None,
     ):
         _rcParams = rcParams.get('env.ForagingEnv._init_', {})
         self.time_cost = time_cost
         self.dt = dt
-        self.rng = np.random.default_rng(rng)
 
         if isinstance(arena, Arena):
             self.arena = arena
@@ -83,6 +81,8 @@ class ForagingEnv(Env):
         self.action_space = self.monkey.action_space
         # monkey state is fully observable to itself
         self.known_dim = len(self.monkey.state_space.nvec)
+
+        self.rng = np.random.default_rng()
 
     def __repr__(self) -> str:
         a_str = str(self.arena)
@@ -147,7 +147,8 @@ class ForagingEnv(Env):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         for x in self._components():
-            x.reset(self.rng)
+            x.rng = self.rng
+            x.reset()
         observation = self._get_observation(False)
         info = self._get_info()
         return observation, info

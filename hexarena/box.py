@@ -25,7 +25,6 @@ class BaseFoodBox:
         num_grades: int = 6,
         num_patches: int = 1,
         sigma: float = 0.05,
-        rng: RandGen|int|None = None,
     ):
         r"""
         Args
@@ -64,7 +63,7 @@ class BaseFoodBox:
 
         self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
 
-        self.rng = np.random.default_rng(rng)
+        self.rng = np.random.default_rng()
         self.param_names = ['sigma']
 
     def __repr__(self) -> str:
@@ -167,7 +166,7 @@ class BaseFoodBox:
             p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
         )
 
-    def reset(self, seed: RandGen|int|None = None) -> None:
+    def reset(self, seed: int|None = None) -> None:
         r"""Resets box state.
 
         Args
