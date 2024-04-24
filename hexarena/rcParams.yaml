@@ -12,3 +12,7 @@ env:
         _target_: hexarena.monkey.Monkey
       box:
         _target_: hexarena.box.PoissonBox
+  SimilarBoxForagingEnv:
+    _init_:
+      box:
+        _target_: hexarena.box.StationaryBox

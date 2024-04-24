@@ -749,7 +749,7 @@ class SimilarBoxForagingEnv(ForagingEnv):
     r"""Environment where some box parameters are shared."""
 
     def __init__(self,
-        box: dict,
+        box: dict|None = None,
         **kwargs,
     ):
         r"""
@@ -759,6 +759,8 @@ class SimilarBoxForagingEnv(ForagingEnv):
             A dictionary specifying shared parameters of boxes.
 
         """
+        _rcParams = rcParams.get('env.SimilarBoxForagingEnv._init_', {})
+        box = Config(box).fill(_rcParams.box)
         if kwargs.get('boxes') is None:
             kwargs['boxes'] = [box]
         else:
