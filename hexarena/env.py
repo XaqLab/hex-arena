@@ -79,8 +79,6 @@ class ForagingEnv(Env):
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
-        # monkey state is fully observable to itself
-        self.known_dim = len(self.monkey.state_space.nvec)
 
         self.rng = np.random.default_rng()
 
