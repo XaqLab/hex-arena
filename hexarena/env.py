@@ -6,7 +6,7 @@ from jarvis.config import Config
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from collections.abc import Collection
+from collections.abc import Sequence
 from irc.dist.distribution import CompositeDistribution
 from irc.episode import Episode
 
@@ -30,6 +30,19 @@ class ForagingEnv(Env):
         time_cost: float = 0.,
         dt: float = 1.,
     ):
+        r"""
+        Args
+        ----
+        arena, monkey:
+            The arena and monkey object.
+        boxes:
+            Food boxes.
+        time_cost:
+            Cost for each time step.
+        dt:
+            Time step in unit of second.
+
+        """
         _rcParams = rcParams.get('env.ForagingEnv._init_', {})
         self.time_cost = time_cost
         self.dt = dt
@@ -142,6 +155,12 @@ class ForagingEnv(Env):
             idx += state_dim
 
     def reset(self, seed: int|None = None) -> tuple[Observation, dict]:
+        r"""Resets environment.
+
+        Random number generator is reset according to `seed`, and linked to `rng`
+        of each component.
+
+        """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         for x in self._components():
@@ -529,7 +548,7 @@ class ForagingEnv(Env):
         return artists
 
     def plot_beliefs(self,
-        axes: Collection[Axes], p_boxes: Array, p_max: float|None = None,
+        axes: Sequence[Axes], p_boxes: Array, p_max: float|None = None,
         artists: list[Artist]|None = None,
     ) -> list[Artist]:
         r"""Plots agent view of one step.

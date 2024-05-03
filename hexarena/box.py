@@ -2,7 +2,7 @@ import numpy as np
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
 
-from collections.abc import Collection
+from collections.abc import Sequence
 
 from hexarena.alias import EnvParam
 
@@ -218,7 +218,7 @@ class PoissonBox(BaseFoodBox):
 
     def __init__(self,
         *,
-        taus: Collection[float]|None = None,
+        taus: Sequence[float]|None = None,
         **kwargs,
     ):
         r"""
