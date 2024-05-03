@@ -49,8 +49,67 @@ def load_monkey_data(filename, block_idx: int) -> dict:
         block_data['push_flag'] = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
 
         block = f[f['block']['params'][block_idx][0]]
-        block_data['kappas'] = np.array(block['kappa']).squeeze()
+        kappa2, kappa0, kappa1 = np.array(block['kappa']).squeeze()
+        block_data['kappas'] = np.array([kappa0, kappa1, kappa2])
         assert len(np.unique(block_data['kappas']))==1, "Noise level should be the same for all boxes."
         tau2, tau0, tau1 = np.array(block['schedules']).squeeze()
         block_data['taus'] = np.array([tau0, tau1, tau2])
+    return block_data
+
+
+def align_monkey_data(block_data: dict, block_idx: int) -> dict:
+    r"""Rotates and flips data in space to have a fixed box order.
+
+    Args
+    ----
+    block_data:
+        Data directly read from mat file using `load_monkey_data`.
+    block_idx:
+        Index of experiment block, ranging in [0, 7).
+
+    Returns
+    -------
+    block_data:
+        All information regarding spatial coordinates and box identity is
+        properly transformed so that box 0 has the slowest rate and box 2 has
+        the fastest.
+
+    """
+    def rot_xy(xy, theta):
+        t = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
+        xy = np.matmul(xy, t)
+        return xy
+    assert block_idx in [0, 2, 4, 6] # only four sessions with low noise are considered for now
+    if block_idx==0:
+        # to rotate -120 deg, box 0->2, 1->0, 2->1
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy = rot_xy(xy, -2*np.pi/3)
+            block_data[key][:, :2] = xy
+        new_order = [1, 2, 0]
+    if block_idx==2:
+        # flip along 30 deg axis, box 0->0, 1->2, 2->1
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy = rot_xy(xy, np.pi/3)
+            xy[:, 0] = -xy[:, 0]
+            xy = rot_xy(xy, -np.pi/3)
+            block_data[key][:, :2] = xy
+        new_order = [0, 2, 1]
+    if block_idx==4:
+        # to rate 120 deg, box 0->1, 1->2, 2->0
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy = rot_xy(xy, 2*np.pi/3)
+            block_data[key][:, :2] = xy
+        new_order = [2, 0, 1]
+    if block_idx==6:
+        # no change
+        new_order = [0, 1, 2]
+    push_idx = block_data['push_idx'].copy()
+    for i in range(3):
+        push_idx[block_data['push_idx']==new_order[i]] = i
+    block_data['push_idx'] = push_idx
+    block_data['cues'] = block_data['cues'][:, new_order]
+    block_data['taus'] = block_data['taus'][new_order]
     return block_data
