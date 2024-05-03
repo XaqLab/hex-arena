@@ -3,9 +3,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
-from collections.abc import Collection
-
-from .alias import Axes, Artist
+from .alias import Array, Axes, Artist
 
 
 class Arena:
@@ -79,6 +77,14 @@ class Arena:
     def plot_mesh(self,
         ax: Axes,
     ) -> None:
+        r"""Plots arena mesh.
+
+        Args
+        ----
+        ax:
+            Axis to plot on.
+
+        """
         _anchors = np.array(self.anchors)
         _idxs = self.corners+[self.corners[0]]
         ax.plot(
@@ -119,16 +125,33 @@ class Arena:
 
     def plot_tile(self,
         ax: Axes,
-        tile_idx: int|None, color = 'none',
+        tile_idx: int, color = 'none',
         h_tile: Artist|None = None,
     ) -> Artist:
-        if tile_idx is None:
-            xy = np.full((1, 2), fill_value=np.nan)
-        else:
-            xy = np.stack([
-                np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
-                for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-            ])+self.anchors[tile_idx]
+        r"""Colors one tile.
+
+        Args
+        ----
+        ax:
+            Axis to plot on.
+        tile_idx:
+            Index of tile to color, in [0, num_tiles).
+        color:
+            The desired tile color.
+        h_tile:
+            Handle of an existing tile. If is ``None``, create a new one.
+            Otherwise update the color and position of provided handle.
+
+        Returns
+        -------
+        h_tile:
+            Handle of the tile patch.
+
+        """
+        xy = np.stack([
+            np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
+            for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
+        ])+self.anchors[tile_idx]
         if h_tile is None:
             h_tile = ax.add_patch(Polygon(
                 xy, edgecolor='none', facecolor=color, zorder=-1,
@@ -140,32 +163,33 @@ class Arena:
 
     def plot_map(self,
         ax: Axes,
-        vals: Collection[float],
+        vals: Array,
         cmap: str = 'YlOrBr',
         vmin: float = 0,
         vmax: float|None = None,
         clabel: str = '',
         h_tiles: list[Artist]|None = None,
-    ):
+    ) -> list[Artist]:
         r"""Plots heat map over the arena.
 
         Args
         ----
-        heatmap: (num_tiles,)
+        ax:
+            Axis to plot on.
+        vals: (num_tiles,)
             An array containing non-negative values for each tile.
-        figsize:
-            Figure size.
-        cmap:
-            Color map string.
-        vmin, vmax:
-            Min and max value for color map.
+        cmap, vmin, vmax:
+            Color map and the extremum values.
         clabel:
             Color bar label.
+        h_tiles:
+            Handles of existing tiles. If is ``None``, create new ones.
+            Otherwise update colors of provided handles.
 
         Returns
         -------
-        fig, ax:
-            Figure and axis handle.
+        h_tiles:
+            Handles of colored tiles.
 
         """
         vals = np.array(vals)

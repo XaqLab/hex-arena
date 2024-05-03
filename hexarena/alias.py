@@ -8,11 +8,11 @@ from matplotlib.axes import Axes
 from matplotlib.artist import Artist
 from matplotlib.animation import Animation
 
-from collections.abc import Collection
+from collections.abc import Sequence
 
-from irc.alias import EnvParam
-BoxObservation = Collection[Collection[int]]
+EnvParam = Sequence[float]
+BoxObservation = Sequence[Sequence[int]]
 BoxState = tuple[int, int]
 MonkeyState = tuple[int, int]
-State = Collection[int]
-Observation = Collection[int]
+State = Sequence[int]
+Observation = Sequence[int]
