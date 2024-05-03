@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import torch
 from gymnasium import Env
@@ -258,19 +259,21 @@ class ForagingEnv(Env):
         pos = get_trajectory(block_data['pos_xyz'])
         gaze = get_trajectory(block_data['gaze_xyz'])
 
-        push_t, push_id = block_data['push_t'], block_data['push_id']
+        push_t, push_idx = block_data['push_t'], block_data['push_idx']
         push, success, box = [], [], []
         for i in range(1, num_steps+1): # one step fewer than pos and gaze
-            push_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
-            _push = push_id[push_idxs]
-            if len(np.unique(_push))>1:
-                print(f'multiple boxes pushed at step {i}')
-            push.append(len(_push)>0)
-            success.append(np.any(block_data['push_flag'][push_idxs]))
-            if len(_push)>0:
-                b_idx = (int(_push[-1])+1)%3
+            t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
+            pushes = push_idx[t_idxs]
+            if len(np.unique(pushes))>1:
+                warnings.warn(
+                    f"""Multiple boxes pushed at step {i}, only the last push will be recorded."""
+                )
+            push.append(len(pushes)>0)
+            success.append(np.any(block_data['push_flag'][t_idxs]))
+            if len(pushes)>0:
+                b_idx = pushes[-1]
                 box.append(b_idx)
-                pos[i] = self.arena.boxes[b_idx]
+                pos[i] = self.arena.boxes[b_idx] # set monkey position
             else:
                 box.append(-1)
         push = np.array(push, dtype=bool)
