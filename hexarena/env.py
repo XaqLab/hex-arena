@@ -1,6 +1,5 @@
 import warnings
 import numpy as np
-import torch
 from gymnasium import Env
 from gymnasium.spaces import MultiDiscrete
 from jarvis.config import Config
@@ -8,17 +7,12 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 from collections.abc import Sequence
-from irc.dist.distribution import CompositeDistribution
-from irc.episode import Episode
 
 from . import rcParams
 from .arena import Arena
 from .monkey import Monkey
 from .box import BaseFoodBox
-from .alias import (
-    EnvParam, Observation, State,
-    Figure, Axes, Artist, Array, RandGen,
-)
+from .alias import EnvParam, Observation, State, Figure, Axes, Artist, Array
 
 class ForagingEnv(Env):
     r"""Foraging environment with food boxes in a hexagonal arena."""
@@ -372,88 +366,6 @@ class ForagingEnv(Env):
 
         return observations, actions, rewards
 
-    def convert_episode(self,
-        episode: Episode,
-        p_s: CompositeDistribution|None = None,
-    ) -> tuple[Array, Array, list[bool|None], Array, Array, Array, Array|None]:
-        r"""Converts episode data to interpretable variables.
-
-        Args
-        ----
-        episode:
-            An episode returned by a BeliefAgent, e.g. `episode = agent.run_one_episode(...)`.
-            'infos' is needed to fully prepare the data.
-        p_s:
-            A distribution object that assumes monkey position, gaze and beliefs
-            about each box are independent from each other. It will be used to
-            interpret `episode.beliefs`.
-
-        Returns
-        -------
-        pos, gaze: int, (num_steps+1,)
-            Tile indices for monkey position and gaze.
-        rewarded: (num_steps+1,)
-            Whether the agent is rewarded, ``None`` stands for no push.
-        foods: bool, (num_steps+1, num_boxes)
-            Food status for all boxes.
-        colors: int, (num_steps+1, num_boxes, mat_size, mat_size)
-            Color cues of all boxes, regardless of the monkey gaze.
-        counts: int, (num_steps+1, num_boxes, 2)
-            Successful and total push counts of each box. The two numbers of
-            last dimension is `(success, total)` tuple.
-        p_boxes: float, (num_steps+1, num_boxes, 2, num_levels)
-            Belief about each box. The last two dimensions describe a joint
-            distribution over food status and cue level, and the numbers should
-            sum up to 1. If `p_s` is not provided, return ``None``.
-
-        """
-        # extract variables from experimenter view
-        assert episode.infos is not None, "Need 'infos' to extract colors of all boxes."
-        pos, gaze, rewarded, foods, colors, counts = [], [], [], [], [], []
-        counts_t = np.zeros((self.num_boxes, 2))
-        for t, info in enumerate(episode.infos):
-            pos.append(info['pos'])
-            gaze.append(info['gaze'])
-            if t==0:
-                rewarded.append(None)
-            else:
-                push, move, _ = self.monkey.convert_action(episode.actions[t-1])
-                if push:
-                    success = episode.rewards[t-1]>0
-                    b_idx = self.arena.boxes.index(move)
-                    rewarded.append(success)
-                    counts_t[b_idx, 0] += int(success)
-                    counts_t[b_idx, 1] += 1
-                else:
-                    rewarded.append(None)
-            foods.append(info['foods'])
-            colors.append(info['colors'])
-            counts.append(counts_t.copy())
-        pos = np.array(pos).astype(int)
-        gaze = np.array(gaze).astype(int)
-        foods = np.array(foods).astype(bool)
-        colors = np.array(colors).astype(int)
-        counts = np.stack(counts).astype(int)
-        # extract beliefs about boxes from agent view
-        if p_s is None:
-            p_boxes = None
-        else:
-            assert isinstance(p_s, CompositeDistribution)
-            d_sets = [[0], [1]]+[[2*i+2, 2*i+3] for i in range(self.num_boxes)]
-            assert p_s.d_sets==d_sets
-            p_boxes = []
-            for k in range(2, 2+self.num_boxes):
-                dist = p_s.s_dists[k]
-                ps = []
-                for belief in episode.beliefs:
-                    param_vec = p_s.set_param_vec(k, belief)
-                    logps, _ = dist.loglikelihoods(dist.all_xs, param_vec)
-                    ps.append(logps.exp())
-                ps = torch.stack(ps).data.cpu().numpy()
-                p_boxes.append(ps.reshape(len(episode.beliefs), 2, -1))
-            p_boxes = np.stack(p_boxes, axis=1)
-        return pos, gaze, rewarded, foods, colors, counts, p_boxes
-
     def plot_arena(self,
         ax: Axes, pos: int, gaze: int, rewarded: bool|None,
         foods: Array|None, colors: Array|None, counts: Array|None,
@@ -608,18 +520,30 @@ class ForagingEnv(Env):
         return artists
 
     def play_episode(self,
-        pos, gaze, rewarded=None, foods=None, colors=None, counts=None, p_boxes=None,
+        pos: Array, gaze: Array,
+        rewarded=None, foods=None, colors=None, counts=None, p_boxes=None,
         tmin: int|None = None, tmax: int|None = None,
         figsize: tuple[float, float]|None = None,
         use_sec: bool = True,
     ) -> tuple[Figure, FuncAnimation]:
         r"""Creates animation of one episode.
 
+        See more details in `plot_arena` and `plot_beliefs`.
+
         Args
         ----
-        pos, gaze, rewarded, foods, colors, counts, p_boxes:
-            Variables typically returned by `convert_episode`, covering time
-            step interval [0, num_steps].
+        pos, gaze: int, (num_steps+1,)
+            Tile index for monkey position and gaze.
+        rewarded: bool|None, (num_steps+1,)
+            Whether the agent is rewarded, ``None`` stands for no push.
+        foods: bool, (num_steps+1, num_boxes)
+            Food status for all boxes.
+        colors: int, (num_steps+1, num_boxes, mat_size, mat_size)
+            Color cues of all boxes, regardless of the monkey gaze.
+        counts: int, (num_steps+1, num_boxes, 2)
+            Push counts since the beginning of the episode.
+        p_boxes: float, (num_steps+1, num_boxes, 2, num_levels)
+            Beliefs about each box.
         tmin, tmax:
             Time index range to visualize.
         figsize:
