@@ -8,7 +8,6 @@ from matplotlib.animation import FuncAnimation
 
 from collections.abc import Sequence
 
-from . import rcParams
 from .arena import Arena
 from .monkey import Monkey
 from .box import BaseFoodBox
@@ -38,20 +37,19 @@ class ForagingEnv(Env):
             Time step in unit of second.
 
         """
-        _rcParams = rcParams.get('env.ForagingEnv._init_', {})
         self.time_cost = time_cost
         self.dt = dt
 
         if isinstance(arena, Arena):
             self.arena = arena
         else:
-            arena = Config(arena).fill(_rcParams.arena)
+            arena = Config(arena).fill({'_target_': 'hexarena.arena.Arena'})
             self.arena: Arena = arena.instantiate()
 
         if isinstance(monkey, Monkey):
             self.monkey = monkey
         else:
-            monkey = Config(monkey).fill(_rcParams.monkey)
+            monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.Monkey'})
             self.monkey: Monkey = monkey.instantiate(arena=self.arena)
 
         self.num_boxes = self.arena.num_boxes
@@ -65,7 +63,7 @@ class ForagingEnv(Env):
             if isinstance(boxes[i], BaseFoodBox):
                 box = boxes[i]
             else:
-                box = Config(boxes[i]).fill(_rcParams.box)
+                box = Config(boxes[i]).fill({'_target_': 'hexarena.box.PoissonBox'})
                 box: BaseFoodBox = box.instantiate()
             box.dt = self.dt
             box.pos = self.arena.boxes[i]
@@ -703,8 +701,7 @@ class SimilarBoxForagingEnv(ForagingEnv):
             A dictionary specifying shared parameters of boxes.
 
         """
-        _rcParams = rcParams.get('env.SimilarBoxForagingEnv._init_', {})
-        box = Config(box).fill(_rcParams.box)
+        box = Config(box).fill({'_target_': 'hexarena.box.StationaryBox'})
         if kwargs.get('boxes') is None:
             kwargs['boxes'] = [box]
         else:

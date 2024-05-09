@@ -6,8 +6,7 @@ from collections.abc import Sequence
 
 from hexarena.alias import EnvParam
 
-from . import rcParams
-from .alias import Array, BoxState, EnvParam, RandGen
+from .alias import Array, BoxState, EnvParam
 
 
 class BaseFoodBox:
@@ -230,12 +229,12 @@ class PoissonBox(BaseFoodBox):
             Keyword arguments for `BaseFoodBox`.
 
         """
-        _rcParams = rcParams.get('box.PoissonBox._init_', {})
         if taus is not None:
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
         if taus is None:
-            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*_rcParams.max_tau
+            max_tau = 36. # sec
+            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*max_tau
         else:
             assert len(taus)==self.num_levels
             self.taus = np.array([*taus])

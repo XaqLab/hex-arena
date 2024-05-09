@@ -3,7 +3,7 @@ from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
 from .arena import Arena
-from .alias import EnvParam, MonkeyState, RandGen
+from .alias import EnvParam, MonkeyState
 
 class Monkey:
     r"""Class for the monkey in an arena."""
