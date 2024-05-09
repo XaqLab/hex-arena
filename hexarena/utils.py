@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
 
 def load_monkey_data(filename, block_idx: int) -> dict:
@@ -113,3 +114,35 @@ def align_monkey_data(block_data: dict, block_idx: int) -> dict:
     block_data['cues'] = block_data['cues'][:, new_order]
     block_data['taus'] = block_data['taus'][new_order]
     return block_data
+
+
+class ProgressBarCallback(_ProgressBarCallback):
+    r"""Callback for update progress bar with recent running statistics."""
+
+    def __init__(self,
+        pbar, disp_freq: int = 128,
+        gamma: float = 0.99,
+    ):
+        r"""
+        Args
+        ----
+        pbar, disp_freq:
+            See `irc.utils.ProgressBarCallback` for more details.
+        gamma:
+            Decay factor for computing running average.
+
+        """
+        super().__init__(pbar, disp_freq)
+        self.gamma = gamma
+        self.reward = 0. # reward rate
+        self.food = 0. # frequency of getting food
+
+    def _on_step(self) -> bool:
+        for reward, info in zip(self.locals['rewards'], self.locals['infos']):
+            self.reward = self.gamma*self.reward+(1-self.gamma)*reward
+            self.freq = self.gamma*self.freq+(1-self.gamma)*info['observation'][-1]
+        if self.n_calls%self.disp_freq==0:
+            self.pbar.set_description(
+                "[Reward rate {:.2f}], [Food freq {:.2f}]".format(self.reward, self.freq)
+            )
+        return super()._on_step()
