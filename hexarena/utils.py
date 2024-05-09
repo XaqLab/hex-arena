@@ -121,7 +121,7 @@ class ProgressBarCallback(_ProgressBarCallback):
 
     def __init__(self,
         pbar, disp_freq: int = 128,
-        gamma: float = 0.99,
+        gamma: float|None = None,
     ):
         r"""
         Args
@@ -133,6 +133,8 @@ class ProgressBarCallback(_ProgressBarCallback):
 
         """
         super().__init__(pbar, disp_freq)
+        if gamma is None:
+            gamma = 0.5**(1/self.disp_freq)
         self.gamma = gamma
         self.reward = 0. # reward rate
         self.food = 0. # frequency of getting food
