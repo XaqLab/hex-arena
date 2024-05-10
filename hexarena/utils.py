@@ -142,9 +142,9 @@ class ProgressBarCallback(_ProgressBarCallback):
     def _on_step(self) -> bool:
         for reward, info in zip(self.locals['rewards'], self.locals['infos']):
             self.reward = self.gamma*self.reward+(1-self.gamma)*reward
-            self.freq = self.gamma*self.freq+(1-self.gamma)*info['observation'][-1]
+            self.food = self.gamma*self.food+(1-self.gamma)*info['observation'][-1]
         if self.n_calls%self.disp_freq==0:
             self.pbar.set_description(
-                "[Reward rate {:.2f}], [Food freq {:.2f}]".format(self.reward, self.freq)
+                "[Reward rate {:.2f}], [Food freq {:.2f}]".format(self.reward, self.food)
             )
         return super()._on_step()
