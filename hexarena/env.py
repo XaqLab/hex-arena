@@ -204,7 +204,7 @@ class ForagingEnv(Env):
         }
         return info
 
-    def convert_experiment_data(self, block_data: dict, arena_radius=1860.5) -> dict:
+    def convert_experiment_data(self, block_data: dict, arena_radius=1860.) -> dict:
         r"""Converts raw experiment data to discrete values.
 
         Spatial and temporal discretization is done to get integer states,
