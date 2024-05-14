@@ -3,18 +3,22 @@ import numpy as np
 from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
 
-def load_monkey_data(filename, block_idx: int) -> dict:
+def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
     r"""Loads one block data from mat file.
 
-    Compatible with 'monkey-data_04052023/testSession2.mat', see `dataset_info.rtf`
-    for more details.
+    Compatible with data files prepared in May 2024, e.g. 'data_Marco.mat',
+    see `dataset_info.rtf` for more details. Only exponential food schedule is
+    supported now.
 
     Args
     ----
     filename:
         Path to data file.
+    session_id:
+        A 8-digit string of experiment session, typically in the format of
+        'YYYYMMDD'.
     block_idx:
-        Index of experiment block, ranging in [0, 7).
+        Index of experiment block, starting from 0.
 
     Returns
     -------
@@ -36,7 +40,14 @@ def load_monkey_data(filename, block_idx: int) -> dict:
     """
     block_data = {}
     with h5py.File(filename, 'r') as f:
-        block = f[f['block']['continuous'][block_idx][0]]
+        num_sessions = len(f['session']['id'])
+        session_ids = []
+        for s_idx in range(num_sessions):
+            session_ids.append(''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]]))
+        session_idx = session_ids.index(session_id)
+        blocks = f[f['session']['block'][session_idx, 0]]
+
+        block = f[blocks['continuous'][block_idx][0]]
         block_data['t'] = np.array(block['t']).squeeze()
         block_data['pos_xyz'] = np.array(block['position']).squeeze()
         block_data['gaze_xyz'] = np.array(block['eyeArenaInt']).squeeze()
@@ -44,12 +55,12 @@ def load_monkey_data(filename, block_idx: int) -> dict:
             np.array(block['rewardProb'][f'box{i}']).squeeze() for i in [2, 3, 1]
         ], axis=1)
 
-        block = f[f['block']['events'][block_idx][0]]
+        block = f[blocks['events'][block_idx][0]]
         block_data['push_t'] = np.array(block['tPush']['all'], dtype=float).squeeze()
         block_data['push_idx'] = (np.array(block['tPush']['id'], dtype=int).squeeze()+1)%3
         block_data['push_flag'] = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
 
-        block = f[f['block']['params'][block_idx][0]]
+        block = f[blocks['params'][block_idx][0]]
         kappa2, kappa0, kappa1 = np.array(block['kappa']).squeeze()
         block_data['kappas'] = np.array([kappa0, kappa1, kappa2])
         assert len(np.unique(block_data['kappas']))==1, "Noise level should be the same for all boxes."
@@ -58,37 +69,32 @@ def load_monkey_data(filename, block_idx: int) -> dict:
     return block_data
 
 
-def align_monkey_data(block_data: dict, block_idx: int) -> dict:
+def align_monkey_data(block_data: dict) -> dict:
     r"""Rotates and flips data in space to have a fixed box order.
 
     Args
     ----
     block_data:
         Data directly read from mat file using `load_monkey_data`.
-    block_idx:
-        Index of experiment block, ranging in [0, 7).
 
     Returns
     -------
     block_data:
         All information regarding spatial coordinates and box identity is
-        properly transformed so that box 0 has the slowest rate and box 2 has
-        the fastest.
+        properly transformed so that box 0 has the slowest rate (tau=35.) and
+        box 2 has the fastest (tau=15.).
 
     """
     def rot_xy(xy, theta):
         t = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
         xy = np.matmul(xy, t)
         return xy
-    assert block_idx in [0, 2, 4, 6] # only four sessions with low noise are considered for now
-    if block_idx==0:
-        # to rotate -120 deg, box 0->2, 1->0, 2->1
-        for key in ['pos_xyz', 'gaze_xyz']:
-            xy = block_data[key][:, :2]
-            xy = rot_xy(xy, -2*np.pi/3)
-            block_data[key][:, :2] = xy
-        new_order = [1, 2, 0]
-    if block_idx==2:
+    TAU_0, TAU_1, TAU_2 = 35., 21., 15.
+    assert set(block_data['taus'])==set([TAU_0, TAU_1, TAU_2])
+    if tuple(block_data['taus'])==(TAU_0, TAU_1, TAU_2):
+        # no change
+        new_order = [0, 1, 2]
+    if tuple(block_data['taus'])==(TAU_0, TAU_2, TAU_1):
         # flip along 30 deg axis, box 0->0, 1->2, 2->1
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
@@ -97,16 +103,36 @@ def align_monkey_data(block_data: dict, block_idx: int) -> dict:
             xy = rot_xy(xy, -np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [0, 2, 1]
-    if block_idx==4:
-        # to rate 120 deg, box 0->1, 1->2, 2->0
+    if tuple(block_data['taus'])==(TAU_1, TAU_0, TAU_2):
+        # flip along y axis, box 0->1, 1->0, 2->2
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy[:, 0] = -xy[:, 0]
+            block_data[key][:, :2] = xy
+        new_order = [1, 0, 2]
+    if tuple(block_data['taus'])==(TAU_1, TAU_2, TAU_0):
+        # rotate 120 deg, box 0->1, 1->2, 2->0
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, 2*np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [2, 0, 1]
-    if block_idx==6:
-        # no change
-        new_order = [0, 1, 2]
+    if tuple(block_data['taus'])==(TAU_2, TAU_0, TAU_1):
+        # to rotate -120 deg, box 0->2, 1->0, 2->1
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy = rot_xy(xy, -2*np.pi/3)
+            block_data[key][:, :2] = xy
+        new_order = [1, 2, 0]
+    if tuple(block_data['taus'])==(TAU_2, TAU_1, TAU_0):
+        # flip along -30 deg axis, box 0->2, 1->1, 2->0
+        for key in ['pos_xyz', 'gaze_xyz']:
+            xy = block_data[key][:, :2]
+            xy = rot_xy(xy, -np.pi/3)
+            xy[:, 0] = -xy[:, 0]
+            xy = rot_xy(xy, np.pi/3)
+            block_data[key][:, :2] = xy
+        new_order = [2, 1, 0]
     push_idx = block_data['push_idx'].copy()
     for i in range(3):
         push_idx[block_data['push_idx']==new_order[i]] = i
