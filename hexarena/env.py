@@ -228,6 +228,8 @@ class ForagingEnv(Env):
             - `success`: (num_steps,) bool array. Whether the food is obtained.
             - `box`: (num_steps,) int array. Box index of the push, -1 if no
                 push is made.
+            - `counts`: (num_steps+1, num_boxes, 2) int array. Push and success
+                counts for each box.
             - `colors`: (num_steps+1, num_boxes, mat_size, mat_size) int array.
                 Colors on the food boxes.
 
@@ -271,6 +273,14 @@ class ForagingEnv(Env):
         push = np.array(push, dtype=bool)
         success = np.array(success, dtype=bool)
         box = np.array(box, dtype=int)
+        counts = np.stack([
+            np.cumsum(
+                np.stack([success, push], axis=1)*(box==b_idx)[:, None], axis=0,
+            ) for b_idx in range(self.num_boxes)
+        ], axis=1)
+        counts = np.concatenate([
+            np.zeros((1, *counts.shape[1:])), counts,
+        ], axis=0).astype(int)
 
         # actual colors are not provided in the raw data, will use a uniform
         # patch estimated from the cumulative cue
@@ -284,7 +294,7 @@ class ForagingEnv(Env):
 
         env_data = {
             'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
-            'push': push, 'success': success, 'box': box,
+            'push': push, 'success': success, 'box': box, 'counts': counts,
             'colors': colors,
         }
         return env_data
