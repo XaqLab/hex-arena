@@ -3,6 +3,55 @@ import numpy as np
 from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
 
+def get_valid_blocks(
+    filename,
+    min_t: float = 300.,
+    requires_pos: bool = False,
+    requires_gaze: bool = False,
+    min_push: int = 0,
+    min_reward: int = 0,
+) -> dict:
+    r"""Returns valid blocks in mat file."""
+    with h5py.File(filename, 'r') as f:
+        num_sessions = len(f['session']['id'])
+        meta = {}
+        for s_idx in range(num_sessions):
+            session_id = ''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]])
+            meta[session_id] = {}
+            blocks = f[f['session']['block'][s_idx, 0]]
+            num_blocks = len(blocks['continuous'])
+            for b_idx in range(num_blocks):
+                block = f[blocks['continuous'][b_idx][0]]
+                t = np.array(block['t']).squeeze()
+                if not (t[0]==0 and np.unique(np.diff(t)).std()<1e-3 and t[-1]>min_t):
+                    continue
+                _meta = {'duration': np.round(t[-1]*1000)/1000} # precision 1 ms
+                pos_xyz = np.array(block['position']).squeeze()
+                gaze_xyz = np.array(block['eyeArenaInt']).squeeze()
+                _meta.update({
+                    'has_pos': pos_xyz.shape==(len(t), 3),
+                    'has_gaze': gaze_xyz.shape==(len(t), 3),
+                })
+                if requires_pos and not _meta['has_pos']:
+                    continue
+                if requires_gaze and not _meta['has_gaze']:
+                    continue
+
+                block = f[blocks['events'][b_idx][0]]
+                pushes = np.array(block['tPush']['all'], dtype=float).squeeze()
+                flags = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
+                _meta.update({
+                    'push': len(pushes), 'reward': np.sum(flags),
+                })
+                if _meta['push']<min_push or _meta['reward']<min_reward:
+                    continue
+
+                meta[session_id][b_idx] = _meta
+            if len(meta[session_id])==0:
+                meta.pop(session_id)
+    return meta
+
+
 def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
     r"""Loads one block data from mat file.
 
@@ -51,6 +100,9 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
         block_data['t'] = np.array(block['t']).squeeze()
         block_data['pos_xyz'] = np.array(block['position']).squeeze()
         block_data['gaze_xyz'] = np.array(block['eyeArenaInt']).squeeze()
+        for key in ['pos_xyz', 'gaze_xyz']:
+            if block_data[key].shape!=(len(block_data['t']), 3):
+                block_data[key] = np.full((len(block_data['t']), 3), fill_value=np.nan)
         block_data['cues'] = np.stack([
             np.array(block['rewardProb'][f'box{i}']).squeeze() for i in [2, 3, 1]
         ], axis=1)
