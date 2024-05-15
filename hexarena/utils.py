@@ -23,9 +23,10 @@ def get_valid_blocks(
             for b_idx in range(num_blocks):
                 block = f[blocks['continuous'][b_idx][0]]
                 t = np.array(block['t']).squeeze()
-                if not (t[0]==0 and np.unique(np.diff(t)).std()<1e-3 and t[-1]>min_t):
+                t -= t.min()
+                if not (np.unique(np.diff(t)).std()<1e-3 and t.max()>min_t):
                     continue
-                _meta = {'duration': np.round(t[-1]*1000)/1000} # precision 1 ms
+                _meta = {'duration': np.round(t.max()*1000)/1000} # precision 1 ms
                 pos_xyz = np.array(block['position']).squeeze()
                 gaze_xyz = np.array(block['eyeArenaInt']).squeeze()
                 _meta.update({
@@ -104,7 +105,7 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
             if block_data[key].shape!=(len(block_data['t']), 3):
                 block_data[key] = np.full((len(block_data['t']), 3), fill_value=np.nan)
         block_data['cues'] = np.stack([
-            np.array(block['rewardProb'][f'box{i}']).squeeze() for i in [2, 3, 1]
+            np.array(block['visualCueSignal'][f'box{i}']).squeeze() for i in [2, 3, 1]
         ], axis=1)
 
         block = f[blocks['events'][block_idx][0]]
@@ -141,12 +142,11 @@ def align_monkey_data(block_data: dict) -> dict:
         t = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
         xy = np.matmul(xy, t)
         return xy
-    TAU_0, TAU_1, TAU_2 = 35., 21., 15.
-    assert set(block_data['taus'])==set([TAU_0, TAU_1, TAU_2])
-    if tuple(block_data['taus'])==(TAU_0, TAU_1, TAU_2):
+    tau_2, tau_1, tau_0 = np.sort(block_data['taus'])
+    if tuple(block_data['taus'])==(tau_0, tau_1, tau_2):
         # no change
         new_order = [0, 1, 2]
-    if tuple(block_data['taus'])==(TAU_0, TAU_2, TAU_1):
+    if tuple(block_data['taus'])==(tau_0, tau_2, tau_1):
         # flip along 30 deg axis, box 0->0, 1->2, 2->1
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
@@ -155,28 +155,28 @@ def align_monkey_data(block_data: dict) -> dict:
             xy = rot_xy(xy, -np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [0, 2, 1]
-    if tuple(block_data['taus'])==(TAU_1, TAU_0, TAU_2):
+    if tuple(block_data['taus'])==(tau_1, tau_0, tau_2):
         # flip along y axis, box 0->1, 1->0, 2->2
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
             xy[:, 0] = -xy[:, 0]
             block_data[key][:, :2] = xy
         new_order = [1, 0, 2]
-    if tuple(block_data['taus'])==(TAU_1, TAU_2, TAU_0):
+    if tuple(block_data['taus'])==(tau_1, tau_2, tau_0):
         # rotate 120 deg, box 0->1, 1->2, 2->0
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, 2*np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [2, 0, 1]
-    if tuple(block_data['taus'])==(TAU_2, TAU_0, TAU_1):
+    if tuple(block_data['taus'])==(tau_2, tau_0, tau_1):
         # to rotate -120 deg, box 0->2, 1->0, 2->1
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, -2*np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [1, 2, 0]
-    if tuple(block_data['taus'])==(TAU_2, TAU_1, TAU_0):
+    if tuple(block_data['taus'])==(tau_2, tau_1, tau_0):
         # flip along -30 deg axis, box 0->2, 1->1, 2->0
         for key in ['pos_xyz', 'gaze_xyz']:
             xy = block_data[key][:, :2]
