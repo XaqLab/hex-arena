@@ -151,7 +151,7 @@ class Arena:
         xy = np.stack([
             np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
-        ])+self.anchors[tile_idx]
+        ])+(self.anchors[tile_idx] if tile_idx>=0 else np.full((2,), fill_value=np.nan))
         if h_tile is None:
             h_tile = ax.add_patch(Polygon(
                 xy, edgecolor='none', facecolor=color, zorder=-1,
