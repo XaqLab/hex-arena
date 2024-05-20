@@ -5,11 +5,13 @@ from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
 def get_valid_blocks(
     filename,
-    min_t: float = 300.,
+    min_duration: float = 300.,
+    min_pos_ratio: float = 0.,
+    min_gaze_ratio: float = 0.,
     requires_pos: bool = False,
     requires_gaze: bool = False,
-    min_push: int = 0,
-    min_reward: int = 0,
+    min_push: int = 5,
+    min_reward: int = 5,
 ) -> dict:
     r"""Returns valid blocks in mat file."""
     with h5py.File(filename, 'r') as f:
@@ -21,21 +23,34 @@ def get_valid_blocks(
             blocks = f[f['session']['block'][s_idx, 0]]
             num_blocks = len(blocks['continuous'])
             for b_idx in range(num_blocks):
+                block = f[blocks['events'][b_idx][0]]
+                tic = np.array(block['tStartBeh'])[0, 0]
+                toc = np.array(block['tEndBeh'])[0, 0]
+                duration = toc-tic
+                if duration<min_duration:
+                    continue
+                _meta = {'duration': np.round(duration*1000)/1000} # precision 1 ms
+
                 block = f[blocks['continuous'][b_idx][0]]
                 t = np.array(block['t']).squeeze()
-                t -= t.min()
-                if not (np.unique(np.diff(t)).std()<1e-3 and t.max()>min_t):
+                if np.unique(np.diff(t)).std()>1e-3:
                     continue
-                _meta = {'duration': np.round(t.max()*1000)/1000} # precision 1 ms
+                mask = t<=duration
                 pos_xyz = np.array(block['position']).squeeze()
+                if pos_xyz.shape==(len(t), 3):
+                    pos_xyz = pos_xyz[mask]
+                    pos_ratio = 1-np.any(np.isnan(pos_xyz[:, :2]), axis=1).mean()
+                else:
+                    pos_ratio = 0.
+                _meta.update({'pos_ratio': pos_ratio})
                 gaze_xyz = np.array(block['eyeArenaInt']).squeeze()
-                _meta.update({
-                    'has_pos': pos_xyz.shape==(len(t), 3),
-                    'has_gaze': gaze_xyz.shape==(len(t), 3),
-                })
-                if requires_pos and not _meta['has_pos']:
-                    continue
-                if requires_gaze and not _meta['has_gaze']:
+                if gaze_xyz.shape==(len(t), 3):
+                    gaze_xyz = gaze_xyz[mask]
+                    gaze_ratio = 1-np.any(np.isnan(gaze_xyz[:, :2]), axis=1).mean()
+                else:
+                    gaze_ratio = 0.
+                _meta.update({'gaze_ratio': gaze_ratio})
+                if _meta['pos_ratio']<min_pos_ratio or _meta['gaze_ratio']<min_gaze_ratio:
                     continue
 
                 block = f[blocks['events'][b_idx][0]]
@@ -45,6 +60,14 @@ def get_valid_blocks(
                     'push': len(pushes), 'reward': np.sum(flags),
                 })
                 if _meta['push']<min_push or _meta['reward']<min_reward:
+                    continue
+
+                block = f[blocks['params'][b_idx][0]]
+                kappas = np.array(block['kappa']).squeeze()
+                if np.any(np.isnan(kappas)) or len(np.unique(kappas))>1:
+                    continue
+                taus = np.array(block['schedules']).squeeze()
+                if np.any(np.isnan(taus)):
                     continue
 
                 meta[session_id][b_idx] = _meta
