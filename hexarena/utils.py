@@ -120,16 +120,25 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
         session_idx = session_ids.index(session_id)
         blocks = f[f['session']['block'][session_idx, 0]]
 
+        block = f[blocks['events'][block_idx][0]]
+        tic = np.array(block['tStartBeh'])[0, 0]
+        toc = np.array(block['tEndBeh'])[0, 0]
+        duration = toc-tic
+
         block = f[blocks['continuous'][block_idx][0]]
         block_data['t'] = np.array(block['t']).squeeze()
+        mask = block_data['t']<=duration
         block_data['pos_xyz'] = np.array(block['position']).squeeze()
         block_data['gaze_xyz'] = np.array(block['eyeArenaInt']).squeeze()
         for key in ['pos_xyz', 'gaze_xyz']:
-            if block_data[key].shape!=(len(block_data['t']), 3):
+            if block_data[key].shape==(len(block_data['t']), 3):
+                block_data[key] = block_data[key][mask]
+            else:
                 block_data[key] = np.full((len(block_data['t']), 3), fill_value=np.nan)
+        block_data['t'] = block_data['t'][mask]
         block_data['cues'] = np.stack([
             np.array(block['visualCueSignal'][f'box{i}']).squeeze() for i in [2, 3, 1]
-        ], axis=1)
+        ], axis=1)[mask]
 
         block = f[blocks['events'][block_idx][0]]
         block_data['push_t'] = np.array(block['tPush']['all'], dtype=float).squeeze()
