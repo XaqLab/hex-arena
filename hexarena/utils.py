@@ -134,7 +134,7 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
             if block_data[key].shape==(len(block_data['t']), 3):
                 block_data[key] = block_data[key][mask]
             else:
-                block_data[key] = np.full((len(block_data['t']), 3), fill_value=np.nan)
+                block_data[key] = np.full((mask.sum(), 3), fill_value=np.nan)
         block_data['t'] = block_data['t'][mask]
         block_data['cues'] = np.stack([
             np.array(block['visualCueSignal'][f'box{i}']).squeeze() for i in [2, 3, 1]
