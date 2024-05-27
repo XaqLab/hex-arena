@@ -76,6 +76,35 @@ def get_valid_blocks(
     return meta
 
 
+def _infer_slope(t, cues):
+    r"""Infers slope of linear probability cue.
+
+    Args
+    ----
+    t: (num_steps)
+        Time stamps of each sample, monotonically increasing.
+    cues: (num_steps)
+        Color cues that linearly increases from 0 after each box push.
+
+    Returns
+    -------
+    t_draws: (num_steps)
+        Drawn time intervals after each push. Each entry corresponds to the
+        latest push.
+
+    """
+    idxs, = np.nonzero(np.diff(cues)<0)
+    idxs = np.concatenate([[0], idxs+1, [len(t)]])
+    t_draws = np.empty(t.shape, dtype=float)
+    for i in range(len(idxs)-1):
+        _t = t[idxs[i]:idxs[i+1]]
+        _cues = cues[idxs[i]:idxs[i+1]]
+        mask = _cues<1
+        t_draw = np.polyfit(_cues[mask], _t[mask], 1)[0]
+        t_draws[idxs[i]:idxs[i+1]] = t_draw
+    return t_draws
+
+
 def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
     r"""Loads one block data from mat file.
 
