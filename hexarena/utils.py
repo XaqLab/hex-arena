@@ -8,8 +8,6 @@ def get_valid_blocks(
     min_duration: float = 300.,
     min_pos_ratio: float = 0.,
     min_gaze_ratio: float = 0.,
-    requires_pos: bool = False,
-    requires_gaze: bool = False,
     min_push: int = 5,
     min_reward: int = 5,
 ) -> dict:
