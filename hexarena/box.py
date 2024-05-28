@@ -151,6 +151,22 @@ class BaseFoodBox:
         self.food = bool(state[0])
         self.level = state[1]
 
+    def _set_colors(self, cue: float) -> None:
+        r"""Sets color patches given cue.
+
+        Args
+        ----
+        cue:
+            A real number in (0, 1) that determines Beta distribution parameters
+            for each patch.
+
+        """
+        rv = stats.beta(a=cue/self.sigma, b=(1-cue)/self.sigma)
+        self.colors = self.rng.choice(
+            self.num_grades, size=(self.mat_size, self.mat_size),
+            p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
+        )
+
     def render(self) -> None:
         r"""Renders color cues.
 
@@ -159,11 +175,7 @@ class BaseFoodBox:
 
         """
         cue = (self.level+0.5)/self.num_levels
-        rv = stats.beta(a=cue/self.sigma, b=(1-cue)/self.sigma)
-        self.colors = self.rng.choice(
-            self.num_grades, size=(self.mat_size, self.mat_size),
-            p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
-        )
+        self._set_colors(cue)
 
     def reset(self, seed: int|None = None) -> None:
         r"""Resets box state.
@@ -407,3 +419,115 @@ class VolatileBox(PoissonBox):
             if self.rng.random()<p_change:
                 self.level = self.rng.choice(self.num_levels)
         super()._step(push)
+
+
+class GammaLinearBox(BaseFoodBox):
+    r"""Box updated by Gamma schedule and uses a linear cue.
+
+    After each button push, a reward time interval is drawn from a Gamma
+    distribution, then the color cue increases linearly from 0 to 1 until the
+    reward is delivered.
+
+    """
+
+    level: int # drawn reward interval, [1, num_levels]
+    timer: int # time since last push, [0, level]
+
+    def __init__(self,
+        tau: float = 14.,
+        shape: float = 10.,
+        num_levels: int = 50,
+        **kwargs,
+    ):
+        super().__init__(num_levels=num_levels, **kwargs)
+        self.scale = tau/shape
+        self.shape = shape
+        assert self.num_levels>=stats.gamma.ppf(0.99, self.shape, scale=self.scale)/self.dt, (
+            f"'num_levels' {self.num_levels} too small for "
+            f"the Gamma distribution ({self.shape}, {self.scale})"
+        )
+        self.state_space = MultiDiscrete([self._state_count(self.num_levels)])
+        self.param_names += ['tau']
+
+    def __repr__(self) -> str:
+        return (
+            f"Box with Gamma ({self.shape}, {self.scale}) schedule and "
+            f"{self.num_grades} color grades"
+        )
+
+    @property
+    def spec(self) -> dict:
+        spec = super().spec
+        spec.update({
+            '_target_': 'hexarena.box.GammaLinearBox',
+            'shape': self.shape, 'scale': self.scale,
+        })
+        return spec
+
+    @property
+    def food(self) -> bool:
+        return self.timer==self.level
+
+    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
+        if name=='tau':
+            val, low, high = [self.scale*self.shape], [0], [np.inf]
+        else:
+            val, low, high = super()._get_param(name)
+        return val, low, high
+
+    def _set_param(self, name: str, val: EnvParam) -> None:
+        if name=='tau':
+            assert len(val)==1
+            self.scale = val[0]/self.shape
+        else:
+            super()._set_param(name, val)
+
+    @staticmethod
+    def _state_count(num_levels: int) -> int:
+        r"""Returns total number of states up to given level.
+
+        `timer` ranges in `[0, level]` and `level` ranges in `[1, num_levels]`.
+
+        """
+        return num_levels*(num_levels+3)//2
+
+    def get_state(self) -> BoxState:
+        r"""Returns box state.
+
+        Box state is the index of the ordered sequence of all possible
+        (level, timer) tuples.
+
+        """
+        state = (self._state_count(self.level-1)+self.timer,)
+        return state
+
+    def set_state(self, state: BoxState) -> None:
+        r"""Sets box state."""
+        level = 1
+        while self._state_count(level)<state[0]:
+            level += 1
+        self.level = level
+        self.timer = state[0]-self._state_count(level-1)
+
+    def render(self) -> None:
+        cue = (self.timer+0.5)/(self.level+1) # color cue marks the progress towards reward
+        self._set_colors(cue)
+
+    def _draw_interval(self) -> None:
+        r"""Draws new reward interval from a Gamma distribution."""
+        level = int(np.ceil(self.rng.gamma(self.shape, self.scale)/self.dt))
+        self.level = min(level, self.num_levels)
+        self.timer = 0
+
+    def reset(self, seed: int|None = None) -> None:
+        r"""Resets box state."""
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        self._draw_interval()
+        self.render()
+
+    def _step(self, push: bool) -> None:
+        if push:
+            self._draw_interval()
+        else:
+            self.timer = min(self.timer+1, self.level)
