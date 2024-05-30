@@ -86,6 +86,8 @@ class ForagingEnv(Env):
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
 
+        self.known_dim = len(self.monkey.state_space.nvec)
+
         self.rng = np.random.default_rng()
 
     def __repr__(self) -> str:
