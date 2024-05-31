@@ -177,6 +177,9 @@ class BaseFoodBox:
         cue = (self.level+0.5)/self.num_levels
         self._set_colors(cue)
 
+    def _reset(self) -> None:
+        raise NotImplementedError
+
     def reset(self, seed: int|None = None) -> None:
         r"""Resets box state.
 
@@ -188,12 +191,10 @@ class BaseFoodBox:
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.food = False
-        self.level = self.rng.choice(self.num_levels)
+        self._reset()
         self.render()
 
     def _step(self, push: bool) -> None:
-        r"""Updates food and level."""
         raise NotImplementedError
 
     def step(self, push: bool) -> float:
@@ -210,10 +211,7 @@ class BaseFoodBox:
             Food reward from the box. Action costs are not considered here.
 
         """
-        if push and self.food:
-            reward = self.reward
-        else:
-            reward = 0.
+        reward = self.reward if push and self.food else 0.
         self._step(push)
         self.render()
         return reward
@@ -283,6 +281,10 @@ class PoissonBox(BaseFoodBox):
             self.taus = np.array([*val])
         else:
             super()._set_param(name, val)
+
+    def _reset(self) -> None:
+        self.food = False
+        self.level = 0
 
     def _step(self, push: bool) -> None:
         if push:
@@ -410,6 +412,10 @@ class VolatileBox(PoissonBox):
         else:
             super()._set_param(name, val)
 
+    def _reset(self) -> None:
+        self.food = False
+        self.level = self.rng.choice(self.num_levels)
+
     def _step(self, push: bool) -> None:
         if push: # penalty for incorrect push
             if not self.food and self.level>0:
@@ -513,21 +519,14 @@ class GammaLinearBox(BaseFoodBox):
         cue = (self.timer+0.5)/(self.level+1) # color cue marks the progress towards reward
         self._set_colors(cue)
 
-    def _draw_interval(self) -> None:
+    def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""
         level = int(np.ceil(self.rng.gamma(self.shape, self.scale)/self.dt))
         self.level = min(level, self.num_levels)
         self.timer = 0
 
-    def reset(self, seed: int|None = None) -> None:
-        r"""Resets box state."""
-        if seed is not None:
-            self.rng = np.random.default_rng(seed)
-        self._draw_interval()
-        self.render()
-
     def _step(self, push: bool) -> None:
         if push:
-            self._draw_interval()
+            self._reset()
         else:
             self.timer = min(self.timer+1, self.level)
