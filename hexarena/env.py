@@ -237,13 +237,13 @@ class ForagingEnv(Env):
 
         """
         t = block_data['t']
-        num_steps = int(np.floor(t.max()/self.dt))
+        num_steps = int(np.floor(t.max()/self.dt))-1
 
         def get_trajectory(xyz):
             xy = xyz[:, :2]/arena_radius
             vals = []
             for i in range(num_steps+1):
-                _xy = xy[(t>=i*self.dt)&(t<(i+1)*self.dt), :]
+                _xy = xy[(t>=(i-0.5)*self.dt)&(t<(i+0.5)*self.dt), :]
                 if np.all(np.isnan(_xy[:, 0])) or np.all(np.isnan(_xy[:, 1])):
                     vals.append(-1) # data gap
                 else:
@@ -289,7 +289,7 @@ class ForagingEnv(Env):
         colors = []
         mat_size = self.boxes[0].mat_size
         for i in range(num_steps+1):
-            _cues = block_data['cues'][t<(i+1)*self.dt, :][-1]
+            _cues = block_data['cues'][t>(i+1)*self.dt, :][0]
             _cues = np.floor(_cues*np.array([box.num_grades for box in self.boxes]))
             colors.append(np.tile(_cues[:, None, None], (1, mat_size, mat_size)))
         colors = np.array(colors, dtype=int)
