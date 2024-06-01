@@ -72,8 +72,8 @@ class Monkey:
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.pos: int = self.rng.choice(self.arena.outers)
-        self.gaze: int = self.rng.choice(self.arena.inners)
+        self.pos: int = self.rng.choice(self.arena.num_tiles)
+        self.gaze: int = self.rng.choice(self.arena.num_tiles)
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
