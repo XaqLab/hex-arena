@@ -289,7 +289,7 @@ class ForagingEnv(Env):
         colors = []
         mat_size = self.boxes[0].mat_size
         for i in range(num_steps+1):
-            _cues = block_data['cues'][t>(i+1)*self.dt, :][0]
+            _cues = np.clip(block_data['cues'][t>(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
             _cues = np.floor(_cues*np.array([box.num_grades for box in self.boxes]))
             colors.append(np.tile(_cues[:, None, None], (1, mat_size, mat_size)))
         colors = np.array(colors, dtype=int)
