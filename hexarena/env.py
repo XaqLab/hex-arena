@@ -342,7 +342,7 @@ class ForagingEnv(Env):
                         observations[t, i] = vals[(vals>=0).nonzero()[0].min()] # first valid frame
             i = 2
             for b_idx, box in enumerate(self.boxes):
-                if env_data['gaze'][t]==self.arena.boxes[b_idx]:
+                if observations[t, 1]==self.arena.boxes[b_idx]:
                     colors = env_data['colors'][t, b_idx].reshape(-1)
                 else:
                     colors = box.num_grades
