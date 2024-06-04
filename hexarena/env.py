@@ -754,3 +754,34 @@ class SimilarBoxForagingEnv(ForagingEnv):
         param_low += [*low]
         param_high += [*high]
         return param_low, param_high
+
+
+class BlindWrapper(ForagingEnv):
+    r"""Wrapper to disable color cue information."""
+
+    def __init__(self,
+        env: ForagingEnv,
+    ):
+        self.wrapped = env
+        nvec = (*self.monkey.state_space.nvec, 2)
+        self.observation_space = MultiDiscrete(nvec)
+
+    def __getattr__(self, name: str):
+        return getattr(self.wrapped, name)
+
+    def _get_observation(self, rewarded: bool) -> Observation:
+        r"""
+        Only monkey state and whether it get rewarded is observed.
+
+        """
+        observation = (*self.monkey.get_state(), int(rewarded))
+        return observation
+
+    def extract_observation_action_reward(self, env_data: dict) -> tuple[Array, Array, Array]:
+        r"""
+        Color cue information is discarded.
+
+        """
+        observations, actions, rewards = self.wrapped.extract_observation_action_reward(env_data)
+        observations = observations[:, list(range(len(self.monkey.state_space.nvec)))+[-1]]
+        return observations, actions, rewards
