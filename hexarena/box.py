@@ -244,7 +244,7 @@ class PoissonBox(BaseFoodBox):
         super().__init__(**kwargs)
         if taus is None:
             max_tau = 36. # sec
-            self.taus = (np.arange(self.num_levels)+1)/self.num_levels*max_tau
+            self.taus = np.arange(self.num_levels, 0, -1)/self.num_levels*max_tau
         else:
             assert len(taus)==self.num_levels
             self.taus = np.array([*taus])
