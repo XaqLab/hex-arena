@@ -1,7 +1,7 @@
 import warnings
 import numpy as np
 from gymnasium import Env
-from gymnasium.spaces import MultiDiscrete
+from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -785,3 +785,82 @@ class BlindWrapper(ForagingEnv):
         observations, actions, rewards = self.wrapped.extract_observation_action_reward(env_data)
         observations = observations[:, list(range(len(self.monkey.state_space.nvec)))+[-1]]
         return observations, actions, rewards
+
+
+class SingleBoxEnv:
+    r"""An environment in which navigation is not needed."""
+
+    def __init__(self,
+        box: BaseFoodBox|dict|None = None,
+        push_cost: float = 1.,
+        time_cost: float = 0.,
+        dt: float = 1.,
+    ):
+        self.push_cost = push_cost
+        self.time_cost = time_cost
+        self.dt = dt
+
+        box = Config(box).fill({'_target_': 'hexarena.box.PoissonBox'})
+        self.box: BaseFoodBox = box.instantiate()
+
+        self.state_space = self.box.state_space
+        self.observation_space = MultiDiscrete([self.box.num_patches, 2])
+        self.action_space = Discrete(2)
+
+        self.known_dim = 0
+
+        self.rng = np.random.default_rng()
+
+
+    def __repr__(self) -> str:
+        b_str = str(self.box)
+        b_str = b_str[0].lower()+b_str[1:]
+        return f"Foraging at {b_str}"
+
+    @property
+    def spec(self) -> dict:
+        return {
+            '_target_': 'hexarena.env.SingleBoxEnv',
+            'box': self.box.spec,
+            'push_cost': self.push_cost,
+            'time_cost': self.time_cost,
+            'dt': self.dt,
+        }
+
+    def get_state(self) -> State:
+        return self.box.get_state()
+
+    def set_state(self, state: State) -> None:
+        self.box.set_state(state)
+
+    def _get_observation(self, rewarded: bool) -> Observation:
+        colors = self.box.colors.reshape(-1)
+        observation = tuple(colors)+(int(rewarded),)
+        return observation
+
+    def _get_info(self) -> dict:
+        info = {
+            'food': self.box.food, 'level': self.box.level, 'colors': self.box.colors,
+        }
+        return info
+
+    def reset(self, seed: int|None = None) -> tuple[Observation, dict]:
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        self.box.rng = self.rng
+        self.box.reset()
+        observation = self._get_observation(False)
+        info = self._get_info()
+        return observation, info
+
+    def step(self, action: int) -> tuple[Observation, float, bool, bool, dict]:
+        reward, terminated, truncated = -self.time_cost, False, False
+        push = action==1
+        if push:
+            reward -= self.push_cost
+        _reward = self.box.step(push)
+        reward += _reward
+        rewarded = _reward>0
+        observation = self._get_observation(rewarded)
+        info = self._get_info()
+        return observation, reward, terminated, truncated, info

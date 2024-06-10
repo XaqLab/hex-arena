@@ -61,6 +61,7 @@ class BaseFoodBox:
         )
 
         self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
+        self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
 
         self.rng = np.random.default_rng()
         self.param_names = ['sigma']
@@ -412,9 +413,12 @@ class VolatileBox(PoissonBox):
         else:
             super()._set_param(name, val)
 
+    def draw_level(self) -> None:
+        self.level = self.rng.choice(self.num_levels)
+
     def _reset(self) -> None:
         self.food = False
-        self.level = self.rng.choice(self.num_levels)
+        self.draw_level()
 
     def _step(self, push: bool) -> None:
         if push: # penalty for incorrect push
@@ -423,7 +427,7 @@ class VolatileBox(PoissonBox):
         else: # box level changes randomly
             p_change = 1-np.exp(-self.dt*self.volatility)
             if self.rng.random()<p_change:
-                self.level = self.rng.choice(self.num_levels)
+                self.draw_level()
         super()._step(push)
 
 
