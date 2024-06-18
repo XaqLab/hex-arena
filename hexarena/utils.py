@@ -11,7 +11,35 @@ def get_valid_blocks(
     min_push: int = 5,
     min_reward: int = 5,
 ) -> dict:
-    r"""Returns valid blocks in mat file."""
+    r"""Returns valid blocks in mat file.
+
+    For exponential schedule (Gamma shape 1), only time constants '{15, 21, 35}'
+    is valid. For Gamma schedule of shape 10, only time constants '{7, 14, 21}'
+    is valid.
+
+    Args
+    ----
+    filename:
+        Path to the mat file.
+    min_duration:
+        Mininum duration of a block, in seconds.
+    min_pos_ratio:
+        Minimum valid data ratio for monkey position data.
+    min_gaze_ratio:
+        Minimum valid data ratio for monkey gaze data.
+    min_push:
+        Minimum number of pushes.
+    min_reward:
+        Minimum counts of collected rewards.
+
+    Returns
+    -------
+    meta:
+        A dict with session ID as keys, each value is a dict of dicts containing
+        summary information of valid blocks, using block index (starting from 0)
+        as key.
+
+    """
     with h5py.File(filename, 'r') as f:
         num_sessions = len(f['session']['id'])
         meta = {}
@@ -66,6 +94,11 @@ def get_valid_blocks(
                     continue
                 taus = np.array(block['schedules']).squeeze()
                 if np.any(np.isnan(taus)):
+                    continue
+                gamma_shape = np.array(block['gammaShape'])[0, 0]
+                if gamma_shape==1. and set(taus)!=set([15., 21., 35.]):
+                    continue
+                if gamma_shape==10. and set(taus)!=set([7., 14., 21.]):
                     continue
 
                 meta[session_id][b_idx] = _meta
