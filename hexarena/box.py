@@ -1,12 +1,13 @@
 import numpy as np
+import torch
 from scipy import stats
 from gymnasium.spaces import MultiDiscrete
+from irc.dist.space import DiscreteVarSpace
+from irc.dist.embedder import BaseEmbedder
 
 from collections.abc import Sequence
 
-from hexarena.alias import EnvParam
-
-from .alias import Array, BoxState, EnvParam
+from .alias import Array, Tensor, BoxState, EnvParam
 
 
 class BaseFoodBox:
@@ -565,3 +566,51 @@ class GammaLinearBox(BaseFoodBox):
             self._reset()
         else:
             self.timer = min(self.timer+1, self.level)
+
+
+class LinearBoxStateEmbedder(BaseEmbedder):
+    r"""State embedder for linear color box state.
+
+    The box state is two integers `(level, timer)`. Instead of encoding them by
+    huge one-hot vector(s), the embedder directly uses the two float numbers as
+    feature.
+
+    Args
+    ----
+    spaces:
+        A list containing only one `DiscreteVarSpace`, which is derived from
+        `GammaLinearBox` state space.
+
+    """
+
+    def __init__(self, spaces: list[DiscreteVarSpace]):
+        assert len(spaces)==1 and isinstance(spaces[0], DiscreteVarSpace)
+
+        num_levels = 0
+        while GammaLinearBox._state_count(num_levels)<spaces[0].n:
+            num_levels += 1
+        assert GammaLinearBox._state_count(num_levels)==spaces[0].n, (
+            f"Invalid space dimension ({spaces[0].n})"
+        )
+        self.num_levels = num_levels
+        super().__init__(spaces)
+        self.feat_dim = 2 # (level, timer)
+
+    def __repr__(self) -> str:
+        return f"Embedder for linear box with {self.num_levels} levels."
+
+    @property
+    def spec(self) -> dict:
+        spec = super().spec
+        spec.update({
+            '_target_': 'hexarena.box.LinearBoxStateEmbedder',
+        })
+        return spec
+
+    def embed(self, xs: Tensor) -> Tensor:
+        feats = []
+        for x in xs:
+            level, timer = GammaLinearBox._idx2sub(int(x.item()))
+            feats.append((level, timer))
+        feats = torch.tensor(feats, dtype=torch.float, device=xs.device)
+        return feats
