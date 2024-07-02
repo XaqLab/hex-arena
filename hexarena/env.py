@@ -14,7 +14,20 @@ from .box import BaseFoodBox
 from .alias import EnvParam, Observation, State, Figure, Axes, Artist, Array
 
 class ForagingEnv(Env):
-    r"""Foraging environment with food boxes in a hexagonal arena."""
+    r"""Foraging environment with food boxes in a hexagonal arena.
+
+    Args
+    ----
+    arena, monkey:
+        The arena and monkey object.
+    boxes:
+        Food boxes.
+    time_cost:
+        Cost for each time step.
+    dt:
+        Time step in unit of second.
+
+    """
 
     def __init__(self,
         *,
@@ -24,19 +37,6 @@ class ForagingEnv(Env):
         time_cost: float = 0.,
         dt: float = 1.,
     ):
-        r"""
-        Args
-        ----
-        arena, monkey:
-            The arena and monkey object.
-        boxes:
-            Food boxes.
-        time_cost:
-            Cost for each time step.
-        dt:
-            Time step in unit of second.
-
-        """
         self.time_cost = time_cost
         self.dt = dt
 

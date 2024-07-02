@@ -6,7 +6,25 @@ from .arena import Arena
 from .alias import EnvParam, MonkeyState
 
 class Monkey:
-    r"""Class for the monkey in an arena."""
+    r"""Class for the monkey in an arena.
+
+    Args
+    ----
+    arena:
+        The arena in which the monkey plays in.
+    push_cost:
+        Cost of pushing the button to open the food box.
+    turn_price:
+        Price of turning, in units of 1/deg. It will be multiplied by the
+        turning angle before moving to get turning cost.
+    move_price:
+        Price of moving, in units of 1/(1^2). It will be multiplied by the
+        square of distance to get moving cost.
+    look_price:
+        Price of looking, in units of 1/deg. It will be multiplied by the
+        turning angle after moving to get looking cost.
+
+    """
 
     def __init__(self,
         arena: Arena|dict|None = None,
@@ -15,24 +33,6 @@ class Monkey:
         move_price: float = 0.,
         look_price: float = 0.001,
     ):
-        r"""
-        Args
-        ----
-        arena:
-            The arena in which the monkey plays in.
-        push_cost:
-            Cost of pushing the button to open the food box.
-        turn_price:
-            Price of turning, in units of 1/deg. It will be multiplied by the
-            turning angle before moving to get turning cost.
-        move_price:
-            Price of moving, in units of 1/(1^2). It will be multiplied by the
-            square of distance to get moving cost.
-        look_price:
-            Price of looking, in units of 1/deg. It will be multiplied by the
-            turning angle after moving to get looking cost.
-
-        """
         if arena is None or isinstance(arena, dict):
             arena = Config(arena)
             arena._target_ = 'hexarena.arena.Arena'

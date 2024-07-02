@@ -11,7 +11,29 @@ from .alias import Array, Tensor, BoxState, EnvParam
 
 
 class BaseFoodBox:
-    r"""Base class for a food box with 2D color cue."""
+    r"""Base class for a food box with 2D color cue.
+
+    Args
+    ----
+    dt:
+        Time step size for temporal discretization, in seconds.
+    reward:
+        Reward value of food, not considered as a parameter.
+    num_levels:
+        Number of box quality levels.
+    num_grades:
+        Number of distinct colors on a color map for discrete values of `colors`.
+    num_patches:
+        Number of colored patches on the screen, must be a square of an integer
+        to represent a square matrix. For example, if `num_patches=16`, a 4*4
+        grid of integers will be used to represent the color pattern on the
+        screen.
+    sigma:
+        Parameter governing the noise of color cues, should be in (0, 0.5).
+        Color cues are drawn from a beta distribution of which the variance is
+        determined by sigma. See `render` for more details.
+
+    """
 
     food: bool # food availability
     level: int # a number in [0, num_levels)
@@ -26,29 +48,6 @@ class BaseFoodBox:
         num_patches: int = 1,
         sigma: float = 0.05,
     ):
-        r"""
-        Args
-        ----
-        dt:
-            Time step size for temporal discretization, in seconds.
-        reward:
-            Reward value of food, not considered as a parameter.
-        num_levels:
-            Number of box quality levels.
-        num_grades:
-            Number of distinct colors on a color map for discrete values of
-            `colors`.
-        num_patches:
-            Number of colored patches on the screen, must be a square of an
-            integer to represent a square matrix. For example, if
-            `num_patches=16`, a 4*4 grid of integers will be used to represent
-            the color pattern on the screen.
-        sigma:
-            Parameter governing the noise of color cues, should be in (0, 0.5).
-            Color cues are drawn from a beta distribution of which the variance
-            is determined by sigma. See `render` for more details.
-
-        """
         self.dt = dt
         self.reward = reward
         self.num_levels = num_levels
@@ -225,6 +224,13 @@ class PoissonBox(BaseFoodBox):
     Different quality levels are characterized by different parameters of
     Poisson process.
 
+    Args
+    ----
+    taus:
+        Time constant for Poisson process corresponding to each level.
+    kwargs:
+        Keyword arguments for `BaseFoodBox`.
+
     """
 
     def __init__(self,
@@ -232,15 +238,6 @@ class PoissonBox(BaseFoodBox):
         taus: Sequence[float]|None = None,
         **kwargs,
     ):
-        r"""
-        Args
-        ----
-        taus:
-            Time constant for Poisson process corresponding to each level.
-        kwargs:
-            Keyword arguments for `BaseFoodBox`.
-
-        """
         if taus is not None:
             kwargs['num_levels'] = len(taus)
         super().__init__(**kwargs)
@@ -303,6 +300,15 @@ class StationaryBox(PoissonBox):
     Box level represents the probability of food presence instead of food appear
     rate.
 
+    Args
+    ----
+    tau:
+        Time constant for every level.
+    num_levels:
+        Number of cue levels instead of quality levels.
+    kwargs:
+        Keyword arguments for `PoissonBox`.
+
     """
 
     def __init__(self,
@@ -310,17 +316,6 @@ class StationaryBox(PoissonBox):
         num_levels: int = 8,
         **kwargs,
     ):
-        r"""
-        Args
-        ----
-        tau:
-            Time constant for every level.
-        num_levels:
-            Number of cue levels instead of quality levels.
-        kwargs:
-            Keyword arguments for `PoissonBox`.
-
-        """
         super().__init__(taus=[tau]*num_levels, **kwargs)
 
     def __repr__(self) -> str:
@@ -369,6 +364,13 @@ class VolatileBox(PoissonBox):
     to a Poisson process. Incorrect push will lead to a level decrease if
     possible.
 
+    Args
+    ----
+    volatility:
+        A positive number describing the level change rate.
+    kwargs:
+        Keyword arguments for `PoissonBox`.
+
     """
 
     def __init__(self,
@@ -376,15 +378,6 @@ class VolatileBox(PoissonBox):
         volatility: float = 0.05,
         **kwargs,
     ):
-        r"""
-        Args
-        ----
-        volatility:
-            A positive number describing the level change rate.
-        kwargs:
-            Keyword arguments for `PoissonBox`.
-
-        """
         super().__init__(**kwargs)
         assert np.all(np.diff(self.taus)<=0), "Box qualities need to be set in increasing order."
         self.volatility = volatility
@@ -439,6 +432,16 @@ class GammaLinearBox(BaseFoodBox):
     distribution, then the color cue increases linearly from 0 to 1 until the
     reward is delivered.
 
+    Args
+    ----
+    tau:
+        Expectation of drawn reward intervals.
+    shape:
+        Shape parameter of the Gamma distribution to draw reward intervals.
+    num_levels:
+        Number of discrete levels for reward interval. It determines the upper
+        bound of interval as `num_levels*dt`.
+
     """
 
     level: int # drawn reward interval, [1, num_levels]
@@ -477,6 +480,7 @@ class GammaLinearBox(BaseFoodBox):
 
     @property
     def food(self) -> bool:
+        r"""Returns food state based on current timer and level."""
         return self.timer==self.level
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:

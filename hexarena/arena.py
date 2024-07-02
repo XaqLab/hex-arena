@@ -14,19 +14,17 @@ class Arena:
     hexagonal grid, and the number of intervals along one wall is defined as the
     resolution of anchors.
 
+    Args
+    ----
+    resol:
+        Resolution of the hexagonal anchor grid. `resol=1` means only seven
+        anchors: six at the corner and one at the center.
+
     """
 
     def __init__(self,
         resol: int = 2,
     ):
-        r"""
-        Args
-        ----
-        resol:
-            Resolution of the hexagonal anchor grid. `resol=1` means only seven
-            anchors: six at the corner and one at the center.
-
-        """
         self.resol = resol
         assert self.resol%2==0, (
             "'resol' needs to be an even number to allocate anchors on the center of walls."
