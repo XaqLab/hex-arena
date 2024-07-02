@@ -166,9 +166,15 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
         - `push_t`: (num_events,). Time of push events.
         - `push_idx`: (num_events,). Box index of each push, in [0, 3).
         - `push_flag`: (num_events,). Whether a reward is obtained of each push.
+        - `gamma_shape`: The shape parameter of Gamma distribution, `1.` means
+        exponential distribution.
         - `kappas`: (3,). Noise level of each box.
         - `taus`: (3,). Time constants of exponential distribution of reward
             intervals.
+        - `intervals`: list of 1D array. The reward intervals at pushes of each
+        boxes. In `gamma_shape==10` experiments, the initial reward interval is
+        included, while in `gamma_shape==1` experiments, the first interval is
+        not saved.
 
     """
     block_data = {}
@@ -206,11 +212,16 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
         block_data['push_flag'] = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
 
         block = f[blocks['params'][block_idx][0]]
+        block_data['gamma_shape'] = np.array(block['gammaShape']).item()
         kappa2, kappa0, kappa1 = np.array(block['kappa']).squeeze()
         block_data['kappas'] = np.array([kappa0, kappa1, kappa2])
         assert len(np.unique(block_data['kappas']))==1, "Noise level should be the same for all boxes."
         tau2, tau0, tau1 = np.array(block['schedules']).squeeze()
         block_data['taus'] = np.array([tau0, tau1, tau2])
+        intervals2 = np.array(block['rewardWaitTime']['box1']).squeeze()
+        intervals0 = np.array(block['rewardWaitTime']['box2']).squeeze()
+        intervals1 = np.array(block['rewardWaitTime']['box3']).squeeze()
+        block_data['intervals'] = [intervals0, intervals1, intervals2]
     return block_data
 
 
