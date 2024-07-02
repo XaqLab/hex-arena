@@ -501,6 +501,41 @@ class GammaLinearBox(BaseFoodBox):
         """
         return num_levels*(num_levels+3)//2
 
+    @staticmethod
+    def _sub2idx(level: int, timer: int) -> int:
+        r"""Converts tuple state to index.
+
+        Args
+        ----
+        level:
+            Current level, starting from 1.
+        timer:
+            Current timer, ranging in `[0, level]`.
+
+        """
+        return GammaLinearBox._state_count(level-1)+timer
+
+    @staticmethod
+    def _idx2sub(state_idx: int) -> tuple[int, int]:
+        r"""Converts state index to tuple.
+
+        Args
+        ----
+        state_idx:
+            An integer in `[0, state_count(num_levels))`.
+
+        Returns
+        -------
+        level, timer:
+            Current level and timer corresponding to `state_idx`.
+
+        """
+        level = 1
+        while GammaLinearBox._state_count(level)<=state_idx:
+            level += 1
+        timer = state_idx-GammaLinearBox._state_count(level-1)
+        return level, timer
+
     def get_state(self) -> BoxState:
         r"""Returns box state.
 
@@ -508,16 +543,12 @@ class GammaLinearBox(BaseFoodBox):
         (level, timer) tuples.
 
         """
-        state = (self._state_count(self.level-1)+self.timer,)
+        state = (self._sub2idx(self.level, self.timer),)
         return state
 
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
-        level = 1
-        while self._state_count(level)<state[0]:
-            level += 1
-        self.level = level
-        self.timer = state[0]-self._state_count(level-1)
+        self.level, self.timer = self._idx2sub(state[0])
 
     def render(self) -> None:
         cue = (self.timer+0.5)/(self.level+1) # color cue marks the progress towards reward
