@@ -261,7 +261,7 @@ class PoissonBox(BaseFoodBox):
         spec = super().spec
         spec.update({
             '_target_': 'hexarena.box.PoissonBox',
-            'taus': self.taus,
+            'taus': list(self.taus),
         })
         return spec
 
@@ -324,7 +324,7 @@ class StationaryBox(PoissonBox):
     @property
     def spec(self) -> dict:
         spec = super().spec
-        tau = spec.pop('taus')[0]
+        tau = float(spec.pop('taus')[0])
         spec.update({
             '_target_': 'hexarena.box.StationaryBox',
             'tau': tau,
