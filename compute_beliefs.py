@@ -1,4 +1,4 @@
-import os, yaml, pickle, torch
+import os, torch
 from pathlib import Path
 import numpy as np
 from jarvis.config import from_cli
@@ -12,22 +12,55 @@ from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 DATA_DIR = Path(__file__).parent/'data'
 STORE_DIR = Path(__file__).parent/'store'
 
-def compute_beliefs(
-    session_id: str, block_idx: int,
+def create_manager(
     data_path: Path, env: SimilarBoxForagingEnv, model: SamplingBeliefModel,
-    ckpt_dir: Path|None = None,
+    store_dir: Path, save_interval: int, patience: float,
 ):
-    if ckpt_dir is None:
-        ckpt_path = None
-    else:
-        os.makedirs(ckpt_dir, exist_ok=True)
-        ckpt_path = ckpt_dir/f'{session_id}_{block_idx}.pkl'
-    block_data = load_monkey_data(data_path, session_id, block_idx)
-    block_data = align_monkey_data(block_data)
-    env_data = env.convert_experiment_data(block_data)
-    observations, actions, _ = env.extract_observation_action_reward(env_data)
-    knowns, beliefs, _ = model.compute_beliefs(observations, actions, ckpt_path, pbar_kw={'leave': False})
-    return knowns, beliefs.data.cpu().numpy()
+    workspace = {}
+    def setup(config: dict):
+        session_id, block_idx = config['session_id'], config['block_idx']
+        block_data = load_monkey_data(data_path, session_id, block_idx)
+        block_data = align_monkey_data(block_data)
+        env_data = env.convert_experiment_data(block_data)
+        observations, actions, _ = env.extract_observation_action_reward(env_data)
+        workspace['observations'] = observations
+        workspace['actions'] = actions
+        return len(actions)
+    def reset():
+        observations = workspace['observations']
+        known, belief, info = model.init_belief(observations[0])
+        workspace.update({
+            'knowns': [known], 'beliefs': [belief], 'infos': [info],
+        })
+    def step():
+        t = len(workspace['knowns'])-1
+        known, belief, info = model.update_belief(
+            workspace['knowns'][t], workspace['beliefs'][t],
+            workspace['actions'][t], workspace['observations'][t+1],
+        )
+        workspace['knowns'].append(known)
+        workspace['beliefs'].append(belief)
+        workspace['infos'].append(info)
+    def get_ckpt():
+        return {
+            'knowns': workspace['knowns'], 'infos': workspace['infos'],
+            'beliefs': [b.data.cpu().numpy() for b in workspace['beliefs']],
+        }
+    def load_ckpt(ckpt):
+        workspace.update({
+            'knowns': ckpt['knowns'], 'infos': ckpt['infos'],
+            'beliefs': [torch.tensor(b, device=model.device) for b in ckpt['beliefs']],
+        })
+
+    manager = Manager(
+        store_dir=store_dir, save_interval=save_interval, patience=patience,
+    )
+    manager.setup = setup
+    manager.reset = reset
+    manager.step = step
+    manager.get_ckpt = get_ckpt
+    manager.load_ckpt = load_ckpt
+    return manager
 
 def main(
     data_dir: Path|str,
@@ -35,6 +68,8 @@ def main(
     subject: str,
     num_samples: int,
     num_works: int|None = None,
+    save_interval: int = 10,
+    patience: float = 12.,
 ):
     data_path = Path(data_dir)/f'data_{subject}.mat'
     assert os.path.exists(data_path), f"{data_path} not found"
@@ -56,7 +91,6 @@ def main(
                     to_process = True
             if to_process:
                 block_ids.append((session_id, block_idx))
-    np.random.default_rng().shuffle(block_ids)
     print(f'{len(block_ids)} valid blocks found.')
 
     if subject=='marco':
@@ -88,25 +122,17 @@ def main(
     model.num_samples = num_samples
 
     store_dir = Path(store_dir)/'beliefs'/subject
-    os.makedirs(store_dir, exist_ok=True)
-    meta = {
-        'subject': subject, 'env_spec': env.spec, 'num_samples': num_samples,
-    }
-    meta_path = store_dir/'meta.yaml'
-    if os.path.exists(meta_path):
-        with open(meta_path, 'r') as f:
-            assert yaml.safe_load(f)==meta
-    else:
-        with open(meta_path, 'w') as f:
-            yaml.dump(meta, f)
-
-    manager = Manager(store_dir, patience=6.)
-    manager.main = lambda config: compute_beliefs(**config,
-        data_path=data_path, env=env, model=model, ckpt_dir=store_dir/'cache',
+    manager = create_manager(
+        data_path, env, model, store_dir, save_interval, patience,
     )
+    configs = [{
+        'session_id': session_id,
+        'block_idx': block_idx,
+        'num_samples': num_samples,
+    } for session_id, block_idx in block_ids]
+    np.random.default_rng().shuffle(configs)
     manager.batch(
-        [{'session_id': session_id, 'block_idx': block_idx} for session_id, block_idx in block_ids],
-        total=num_works, pbar_kw={'unit': 'block', 'leave': True},
+        configs, num_works=num_works, pbar_kw={'unit': 'block', 'leave': True},
     )
 
 if __name__=='__main__':
