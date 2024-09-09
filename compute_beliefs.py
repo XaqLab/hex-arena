@@ -15,7 +15,7 @@ STORE_DIR = Path(__file__).parent/'store'
 def create_manager(
     data_path: Path, env: SimilarBoxForagingEnv, model: SamplingBeliefModel,
     store_dir: Path, save_interval: int, patience: float,
-):
+) -> Manager:
     workspace = {}
     def setup(config: dict):
         session_id, block_idx = config['session_id'], config['block_idx']

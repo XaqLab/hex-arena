@@ -58,4 +58,4 @@ spec:
         - name: store
           mountPath: /hex-arena/store
         command: ["/bin/bash"] # Entry point for the container
-        args: ["-c", "python -u compute_beliefs.py subject=marco max_wait=10 num_works=1 patience=48"] # sh commands to clone and run python script
+        args: ["-c", "python -u compute_beliefs.py subject=marco max_wait=10 num_works=1 patience=1"] # sh commands to clone and run python script
