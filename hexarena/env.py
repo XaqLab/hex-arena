@@ -256,7 +256,7 @@ class ForagingEnv(Env):
         gaze = get_trajectory(block_data['gaze_xyz'])
 
         push_t, push_idx = block_data['push_t'], block_data['push_idx']
-        push, success, box = [], [], []
+        push, success, box, t_wait = [], [], [], [np.zeros(self.num_boxes)]
         for i in range(1, num_steps+1): # one step fewer than pos and gaze
             t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
             pushes = push_idx[t_idxs]
@@ -266,15 +266,18 @@ class ForagingEnv(Env):
                 )
             push.append(len(pushes)>0)
             success.append(np.any(block_data['push_flag'][t_idxs]))
+            t_wait.append(t_wait[-1]+1)
             if len(pushes)>0:
                 b_idx = pushes[-1]
                 box.append(b_idx)
                 pos[i] = self.arena.boxes[b_idx] # set monkey position
+                t_wait[-1][b_idx] = 0
             else:
                 box.append(-1)
         push = np.array(push, dtype=bool)
         success = np.array(success, dtype=bool)
         box = np.array(box, dtype=int)
+        t_wait = np.stack(t_wait).astype(int)
         counts = np.stack([
             np.cumsum(
                 np.stack([success, push], axis=1)*(box==b_idx)[:, None], axis=0,
@@ -296,7 +299,7 @@ class ForagingEnv(Env):
 
         env_data = {
             'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
-            'push': push, 'success': success, 'box': box, 'counts': counts,
+            'push': push, 'success': success, 'box': box, 't_wait': t_wait,'counts': counts,
             'colors': colors,
         }
         return env_data
