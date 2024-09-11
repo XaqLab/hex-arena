@@ -51,6 +51,7 @@ def create_manager(
             'knowns': ckpt['knowns'], 'infos': ckpt['infos'],
             'beliefs': [torch.tensor(b, device=model.device) for b in ckpt['beliefs']],
         })
+        return len(workspace['knowns'])-1
 
     manager = Manager(
         store_dir=store_dir, save_interval=save_interval, patience=patience,
@@ -133,6 +134,9 @@ def main(
     np.random.default_rng().shuffle(configs)
     manager.batch(
         configs, num_works=num_works, pbar_kw={'unit': 'block', 'leave': True},
+        process_kw={'pbar_desc': lambda config: '{}-B{}'.format(
+            config['session_id'], config['block_idx'],
+        )},
     )
 
 if __name__=='__main__':
