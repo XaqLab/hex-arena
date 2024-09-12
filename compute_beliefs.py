@@ -114,7 +114,7 @@ def main(
         )
         phi = {
             'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
-            'mlp_features': [6],
+            'mlp_features': [16, 8],
         }
         model = SamplingBeliefModel(
             env, p_s={'phis': [phi]*3},
