@@ -12,10 +12,113 @@ from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 DATA_DIR = Path(__file__).parent/'data'
 STORE_DIR = Path(__file__).parent/'store'
 
+def prepare_blocks(data_path: Path, subject: str) -> list[tuple[str, int]]:
+    r"""Prepares blocks to process.
+
+    Args
+    ----
+    data_path:
+        Experiment data file path, e.g. 'data_marco.mat'.
+    subject:
+        Subject name.
+
+    Returns
+    -------
+    block_ids:
+        The block ID `(session_id, block_idx)` of all blocks to be processed.
+
+    """
+    assert os.path.exists(data_path), f"{data_path} not found"
+    assert subject in ['marco', 'viktor'], (
+        "Only 'marco' and 'viktor' can be processed now."
+    )
+    block_infos = get_valid_blocks(data_path, min_pos_ratio=0.5, min_gaze_ratio=0.1)
+
+    block_ids = []
+    for session_id in block_infos:
+        for block_idx in block_infos[session_id]:
+            block_data = load_monkey_data(data_path, session_id, block_idx)
+            to_process = False
+            if subject=='marco':
+                if np.all(block_data['kappas']==0.01) and set(block_data['taus'])==set([15., 21., 35.]):
+                    to_process = True
+            if subject=='viktor':
+                if set(block_data['taus'])==set([7., 14., 21.]):
+                    to_process = True
+            if to_process:
+                block_ids.append((session_id, block_idx))
+    print(f'{len(block_ids)} valid blocks found.')
+    return block_ids
+
+def create_default_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
+    r"""Creates default belief model.
+
+    Args
+    ----
+    subject:
+        Subject name, only 'marco' and 'viktor' are supported now.
+
+    Returns
+    -------
+    env:
+        A foraging environment. For 'marco', it is the exponential schedule. For
+        'viktor' it is the Gamma distribution schedule. Color cues are also
+        presented in different ways.
+    model:
+        A sampling-based belief model, with state independence specified.
+
+    """
+    if subject=='marco':
+        env = SimilarBoxForagingEnv(
+            box={
+                '_target_': 'hexarena.box.StationaryBox',
+                'num_patches': 1, 'num_levels': 10, 'num_grades': 8,
+            },
+            boxes=[{'tau': tau} for tau in [35, 21, 15]],
+        )
+        model = SamplingBeliefModel(env,
+            s_idcs=[[0], [1], [2, 3], [4, 5], [6, 7]],
+        )
+    if subject=='viktor':
+        env = SimilarBoxForagingEnv(
+            box={
+                '_target_': 'hexarena.box.GammaLinearBox', 'num_patches': 1, 'num_levels': 40,
+            },
+            boxes=[{'tau': tau} for tau in [21, 14, 7]],
+        )
+        phi = {
+            'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
+            'mlp_features': [16, 8],
+        }
+        model = SamplingBeliefModel(
+            env, p_s={'phis': [phi]*3},
+        )
+    return env, model
+
 def create_manager(
     data_path: Path, env: SimilarBoxForagingEnv, model: SamplingBeliefModel,
     store_dir: Path, save_interval: int, patience: float,
 ) -> Manager:
+    r"""Creates a manager to handle batch processing.
+
+    Args
+    ----
+    data_path:
+        Experiment data file path, see `prepare_blocks` for more details.
+    env, model:
+        Foraging environment and belief model. See `create_default_model` for
+        more details.
+    store_dir, save_interval, patience:
+        Arguments for specifying the manager object, see `jarvis.manager.Manager`
+        for more details.
+
+    Returns
+    -------
+    manager:
+        A manager object that computes beliefs for each experiment block. Batch
+        processing and resuming from checkpoint are supported.
+
+    """
     workspace = {}
     def setup(config: dict):
         session_id, block_idx = config['session_id'], config['block_idx']
@@ -73,52 +176,8 @@ def main(
     patience: float = 12.,
 ):
     data_path = Path(data_dir)/f'data_{subject}.mat'
-    assert os.path.exists(data_path), f"{data_path} not found"
-    assert subject in ['marco', 'viktor'], (
-        "Only 'marco' and 'viktor' can be processed now."
-    )
-    block_infos = get_valid_blocks(data_path, min_pos_ratio=0.5, min_gaze_ratio=0.1)
-
-    block_ids = []
-    for session_id in block_infos:
-        for block_idx in block_infos[session_id]:
-            block_data = load_monkey_data(data_path, session_id, block_idx)
-            to_process = False
-            if subject=='marco':
-                if np.all(block_data['kappas']==0.01) and set(block_data['taus'])==set([15., 21., 35.]):
-                    to_process = True
-            if subject=='viktor':
-                if set(block_data['taus'])==set([7., 14., 21.]):
-                    to_process = True
-            if to_process:
-                block_ids.append((session_id, block_idx))
-    print(f'{len(block_ids)} valid blocks found.')
-
-    if subject=='marco':
-        env = SimilarBoxForagingEnv(
-            box={
-                '_target_': 'hexarena.box.StationaryBox',
-                'num_patches': 1, 'num_levels': 10, 'num_grades': 8,
-            },
-            boxes=[{'tau': tau} for tau in [35, 21, 15]],
-        )
-        model = SamplingBeliefModel(env,
-            s_idcs=[[0], [1], [2, 3], [4, 5], [6, 7]],
-        )
-    if subject=='viktor':
-        env = SimilarBoxForagingEnv(
-            box={
-                '_target_': 'hexarena.box.GammaLinearBox', 'num_patches': 1, 'num_levels': 40,
-            },
-            boxes=[{'tau': tau} for tau in [21, 14, 7]],
-        )
-        phi = {
-            'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
-            'mlp_features': [16, 8],
-        }
-        model = SamplingBeliefModel(
-            env, p_s={'phis': [phi]*3},
-        )
+    block_ids = prepare_blocks(data_path, subject)
+    env, model = create_default_model(subject)
     model.use_sample = True
     model.num_samples = num_samples
 
