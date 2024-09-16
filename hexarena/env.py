@@ -299,7 +299,7 @@ class ForagingEnv(Env):
 
         env_data = {
             'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
-            'push': push, 'success': success, 'box': box, 't_wait': t_wait,'counts': counts,
+            'push': push, 'success': success, 'box': box, 't_wait': t_wait, 'counts': counts,
             'colors': colors,
         }
         return env_data
