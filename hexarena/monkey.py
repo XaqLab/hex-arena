@@ -1,4 +1,5 @@
 import numpy as np
+from collections.abc import Iterable
 from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
@@ -163,6 +164,56 @@ class Monkey:
         else:
             action = move*self.arena.num_tiles+look
         return action
+
+    def merge_actions(self,
+        actions: Iterable[int],
+        num_macros: int = 10,
+    ) -> list[int]:
+        r"""Merges primitive actions to macro actions.
+
+        Designed for three-box arena, so that primitive actions are grouped into
+        smaller set of macro actions.
+
+        Args
+        ----
+        actions: (num_steps,)
+            Sequence of primitive actions.
+        num_actions:
+            Macro action space size. 'num_macros=10' involves 3 push actions and
+            7 move actions. See comments for more details.
+
+        Returns
+        -------
+        macros: (num_steps,)
+            Sequence of macro actions.
+
+        """
+        assert self.arena.num_boxes==3 and num_macros in [10], (
+            f"`num_macros={num_macros}` is not supported"
+        )
+        macros = []
+        for action in actions:
+            push, move, _ = self.convert_action(action) # `look` is ignored
+            if push:
+                macro = self.arena.boxes.index(move) # [0, 3) for push actions
+            else:
+                assert self.arena.num_tiles==19, "Only 19-tile environment is supported"
+                if move in [1, 2, 7, 8, 9]:
+                    macro = 3
+                if move in [3, 4, 11, 12, 13]:
+                    macro = 4
+                if move in [5, 6, 15, 16, 17]:
+                    macro = 5
+                if move==0:
+                    macro = 6
+                if move==10:
+                    macro = 7
+                if move==14:
+                    macro = 8
+                if move==18:
+                    macro = 9
+            macros.append(macro)
+        return macros
 
     def step(self, push: bool, move: int, look: int) -> float:
         r"""Monkey acts for one step.
