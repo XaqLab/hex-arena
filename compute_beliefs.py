@@ -97,7 +97,7 @@ def create_default_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingB
 
 def create_manager(
     data_path: Path, env: SimilarBoxForagingEnv, model: SamplingBeliefModel,
-    store_dir: Path, save_interval: int, patience: float,
+    store_dir: Path, save_interval: int = 10, patience: float = 12.,
 ) -> Manager:
     r"""Creates a manager to handle batch processing.
 
