@@ -198,19 +198,19 @@ class Monkey:
                 macro = self.arena.boxes.index(move) # [0, 3) for push actions
             else:
                 assert self.arena.num_tiles==19, "Only 19-tile environment is supported"
-                if move in [1, 2, 7, 8, 9]:
+                if move in [1, 2, 7, 8, 9]: # near box 0
                     macro = 3
-                if move in [3, 4, 11, 12, 13]:
+                if move in [3, 4, 11, 12, 13]: # near box 1
                     macro = 4
-                if move in [5, 6, 15, 16, 17]:
+                if move in [5, 6, 15, 16, 17]: # near box 2
                     macro = 5
-                if move==0:
+                if move==0: # center
                     macro = 6
-                if move==10:
+                if move==10: # between box 0-1
                     macro = 7
-                if move==14:
+                if move==14: # between box 1-2
                     macro = 8
-                if move==18:
+                if move==18: # between box 2-0
                     macro = 9
             macros.append(macro)
         return macros
