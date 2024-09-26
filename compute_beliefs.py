@@ -6,6 +6,7 @@ from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 
 from hexarena.env import SimilarBoxForagingEnv
+from hexarena.alias import Array
 from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 
 
@@ -166,6 +167,33 @@ def create_manager(
     manager.get_ckpt = get_ckpt
     manager.load_ckpt = load_ckpt
     return manager
+
+def fetch_beliefs(
+    manager: Manager, session_id: str, block_idx: int, num_samples: int = 1000,
+) -> tuple[Array, Array, Array, Array]:
+    r"""Fetches computed beliefs.
+
+    Args
+    ----
+    manager:
+        A manager object returned by `create_manager`.
+    session_id, block_idx, num_samples:
+        Identifier of computed results.
+
+    Returns
+    -------
+    observations, actions, knowns, beliefs:
+        Sequences of data for the specified block.
+
+    """
+    ckpt = manager.process({
+        'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,
+    })
+    observations = np.array(ckpt['observations'])
+    actions = np.array(ckpt['actions'])
+    knowns = np.array(ckpt['knowns'])
+    beliefs = np.array(ckpt['beliefs'])
+    return observations, actions, knowns, beliefs
 
 def main(
     data_dir: Path|str,
