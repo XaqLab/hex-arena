@@ -129,6 +129,7 @@ def create_manager(
         observations, actions, _ = env.extract_observation_action_reward(env_data)
         workspace['observations'] = observations
         workspace['actions'] = actions
+        model.num_samples = config['num_samples']
         return len(actions)
     def reset():
         observations = workspace['observations']
@@ -208,7 +209,6 @@ def main(
     block_ids = prepare_blocks(data_path, subject)
     env, model = create_default_model(subject)
     model.use_sample = True
-    model.num_samples = num_samples
 
     store_dir = Path(store_dir)/'beliefs'/subject
     manager = create_manager(
