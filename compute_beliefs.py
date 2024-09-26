@@ -146,6 +146,7 @@ def create_manager(
         workspace['infos'].append(info)
     def get_ckpt():
         return {
+            'observations': workspace['observations'], 'actions': workspace['actions'],
             'knowns': workspace['knowns'], 'infos': workspace['infos'],
             'beliefs': [b.data.cpu().numpy() for b in workspace['beliefs']],
         }
