@@ -1,7 +1,7 @@
 import os, torch
 from pathlib import Path
 import numpy as np
-from jarvis.config import from_cli
+from jarvis.config import from_cli, Config
 from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 
@@ -13,13 +13,13 @@ from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 DATA_DIR = Path(__file__).parent/'data'
 STORE_DIR = Path(__file__).parent/'store'
 
-def prepare_blocks(data_path: Path, subject: str) -> list[tuple[str, int]]:
+def prepare_blocks(data_dir: Path, subject: str) -> list[tuple[str, int]]:
     r"""Prepares blocks to process.
 
     Args
     ----
-    data_path:
-        Experiment data file path, e.g. 'data_marco.mat'.
+    data_dir:
+        Directory that contains experiment data file, e.g. 'data_marco.mat'.
     subject:
         Subject name.
 
@@ -29,6 +29,7 @@ def prepare_blocks(data_path: Path, subject: str) -> list[tuple[str, int]]:
         The block ID `(session_id, block_idx)` of all blocks to be processed.
 
     """
+    data_path = data_dir/f'data_{subject}.mat'
     assert os.path.exists(data_path), f"{data_path} not found"
     assert subject in ['marco', 'viktor'], (
         "Only 'marco' and 'viktor' can be processed now."
@@ -51,7 +52,7 @@ def prepare_blocks(data_path: Path, subject: str) -> list[tuple[str, int]]:
     print(f'{len(block_ids)} valid blocks found.')
     return block_ids
 
-def create_default_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
+def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
     r"""Creates default belief model.
 
     Args
@@ -97,21 +98,20 @@ def create_default_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingB
     return env, model
 
 def create_manager(
-    data_path: Path, env: SimilarBoxForagingEnv, model: SamplingBeliefModel,
-    store_dir: Path, save_interval: int = 10, patience: float = 12.,
+    data_dir: Path, store_dir: Path, subject: str,
+    save_interval: int = 10, patience: float = 12.,
 ) -> Manager:
     r"""Creates a manager to handle batch processing.
 
     Args
     ----
-    data_path:
-        Experiment data file path, see `prepare_blocks` for more details.
-    env, model:
-        Foraging environment and belief model. See `create_default_model` for
-        more details.
-    store_dir, save_interval, patience:
-        Arguments for specifying the manager object, see `jarvis.manager.Manager`
-        for more details.
+    data_dir, store_dir:
+        Directory of data and storage respectively.
+    subject_dir:
+        Subject name.
+    save_interval, patience:
+        Arguments of the manager object, see `jarvis.manager.Manager` for more
+        details.
 
     Returns
     -------
@@ -120,16 +120,26 @@ def create_manager(
         processing and resuming from checkpoint are supported.
 
     """
+    data_path = data_dir/f'data_{subject}.mat'
+    env, model = create_model(subject)
+    model.use_sample = True
     workspace = {}
-    def setup(config: dict):
-        session_id, block_idx = config['session_id'], config['block_idx']
+    def setup(config: Config):
+        r"""
+        config:
+          - session_id: str
+          - block_idx: int
+          - num_samples: int
+
+        """
+        session_id, block_idx = config.session_id, config.block_idx
         block_data = load_monkey_data(data_path, session_id, block_idx)
         block_data = align_monkey_data(block_data)
         env_data = env.convert_experiment_data(block_data)
         observations, actions, _ = env.extract_observation_action_reward(env_data)
         workspace['observations'] = observations
         workspace['actions'] = actions
-        model.num_samples = config['num_samples']
+        model.num_samples = config.num_samples
         return len(actions)
     def reset():
         observations = workspace['observations']
@@ -158,26 +168,31 @@ def create_manager(
             'beliefs': [torch.tensor(b, device=model.device) for b in ckpt['beliefs']],
         })
         return len(workspace['knowns'])-1
+    def pbar_desc(config):
+        return f'{config.session_id}-B{config.block_idx}'
 
     manager = Manager(
-        store_dir=store_dir, save_interval=save_interval, patience=patience,
+        store_dir=Path(store_dir)/'beliefs'/subject,
+        save_interval=save_interval, patience=patience,
     )
     manager.setup = setup
     manager.reset = reset
     manager.step = step
     manager.get_ckpt = get_ckpt
     manager.load_ckpt = load_ckpt
+    manager.pbar_desc = pbar_desc
     return manager
 
 def fetch_beliefs(
-    manager: Manager, session_id: str, block_idx: int, num_samples: int = 1000,
+    data_dir: Path, store_dir: Path, subject: str,
+    session_id: str, block_idx: int, num_samples: int = 1000,
 ) -> tuple[Array, Array, Array, Array]:
     r"""Fetches computed beliefs.
 
     Args
     ----
-    manager:
-        A manager object returned by `create_manager`.
+    data_dir, store_dir, subject:
+        Arguments of `create_manager`.
     session_id, block_idx, num_samples:
         Identifier of computed results.
 
@@ -187,6 +202,7 @@ def fetch_beliefs(
         Sequences of data for the specified block.
 
     """
+    manager = create_manager(data_dir, store_dir, subject)
     ckpt = manager.process({
         'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,
     })
@@ -205,14 +221,10 @@ def main(
     save_interval: int = 10,
     patience: float = 12.,
 ):
-    data_path = Path(data_dir)/f'data_{subject}.mat'
-    block_ids = prepare_blocks(data_path, subject)
-    env, model = create_default_model(subject)
-    model.use_sample = True
-
-    store_dir = Path(store_dir)/'beliefs'/subject
+    data_dir, store_dir = Path(data_dir), Path(store_dir)
+    block_ids = prepare_blocks(data_dir, subject)
     manager = create_manager(
-        data_path, env, model, store_dir, save_interval, patience,
+        data_dir, store_dir, subject, save_interval, patience,
     )
     configs = [{
         'session_id': session_id,
@@ -222,9 +234,6 @@ def main(
     np.random.default_rng().shuffle(configs)
     manager.batch(
         configs, num_works=num_works, pbar_kw={'unit': 'block', 'leave': True},
-        process_kw={'pbar_desc': lambda config: '{}-B{}'.format(
-            config['session_id'], config['block_idx'],
-        )},
     )
 
 if __name__=='__main__':
