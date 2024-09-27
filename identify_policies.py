@@ -266,7 +266,7 @@ def main(
     subject: str,
     num_samples: int = 1000,
     num_macros: int = 10,
-    choices: Path|str = 'hmp_spec.yaml',
+    choices: Path|str = 'hmp_spec_A10.yaml',
     num_iters: int = 50,
     num_works: int|None = None,
 ):
