@@ -1,46 +1,84 @@
-import os, pickle, torch
+import pickle, torch
 from pathlib import Path
-import numpy as np
-from jarvis.config import from_cli, Config
-from jarvis.utils import tqdm
+from jarvis.config import from_cli, choices2configs, Config
+from jarvis.utils import tqdm, tensor2array, array2tensor
 from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 from irc.hmp import HiddenMarkovPolicy
 
-from hexarena.env import SimilarBoxForagingEnv
-from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
+from hexarena.alias import Tensor
 
-from compute_beliefs import prepare_blocks, create_default_model, create_manager
+from compute_beliefs import prepare_blocks, create_model, fetch_beliefs
 
 
 DATA_DIR = Path(__file__).parent/'data'
 STORE_DIR = Path(__file__).parent/'store'
 
-def fetch_beliefs(manager, session_id, block_idx, num_samples=1000):
-    ckpt = manager.process({
-        'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,
-    })
-    knowns = np.array(ckpt['knowns'])
-    beliefs = np.array(ckpt['beliefs'])
-    return knowns, beliefs
+def collect_data(
+    data_dir: Path, store_dir: Path, subject: str, block_ids: list[tuple[str, int]],
+    num_samples: int, num_macros: int,
+) -> tuple[list[Tensor], list[Tensor], list[Tensor]]:
+    r"""Collect data from blocks.
 
-def collect_data(block_ids, data_path, env, manager, num_samples, num_macros):
+    Args
+    ----
+    data_dir, store_dir:
+        Directory of data and storage respectively.
+    subject_dir:
+        Subject name.
+    num_samples:
+        Number of samples in each step of belief update, see `fetch_beliefs`
+        for more details.
+    num_macros:
+        Number of macro actions for action merging.
+
+    Returns
+    -------
+    knowns, beliefs: [(num_steps, .)]
+        Known states and beliefs of each block.
+    actions: [(num_steps,)]
+        Macro actions of each block.
+
+    """
+    env, _ = create_model(subject)
     knowns, beliefs, actions = [], [], []
     for session_id, block_idx in tqdm(block_ids, desc='Collect data', unit='block', leave=False):
-        block_data = load_monkey_data(data_path, session_id, block_idx)
-        block_data = align_monkey_data(block_data)
-        env_data = env.convert_experiment_data(block_data)
-        _, _actions, _ = env.extract_observation_action_reward(env_data)
+        _, _actions, _knowns, _beliefs = fetch_beliefs(
+            data_dir, store_dir, subject, session_id, block_idx, num_samples,
+        )
         _actions = env.monkey.merge_actions(_actions, num_macros)
         actions.append(torch.tensor(_actions, dtype=torch.long))
 
         T = len(_actions)
-        _knowns, _beliefs = fetch_beliefs(manager, session_id, block_idx, num_samples)
         knowns.append(torch.tensor(_knowns, dtype=torch.float)[:T])
         beliefs.append(torch.tensor(_beliefs, dtype=torch.float)[:T])
     return knowns, beliefs, actions
 
-def init_hmp(model, z_dim, num_macros, num_policies, store_dir):
+def init_hmp(
+    model: SamplingBeliefModel,
+    z_dim: int, num_macros: int, num_policies: int,
+    store_dir: Path,
+) -> HiddenMarkovPolicy:
+    r"""Initializes a hidden Markov policy object.
+
+    The pretrained belief encoder is loaded, expected to be found in the folder
+    `store_dir/'belief_vaes'`.
+
+    Args
+    ---
+    model:
+        Belief model of the foraging environment.
+    z_dim, num_macros, num_policies:
+        Arguments of the hidden Markov policy.
+    store_dir:
+        Directory of storage, where pretrained belief encoder should be found.
+
+    Returns
+    -------
+    hmp:
+        The HiddenMarkovPolicy for policy identification.
+
+    """
     hmp = HiddenMarkovPolicy(
         model.p_s, z_dim, num_macros, num_policies=num_policies,
         ebd_k=model.ebd_k, ebd_b=model.ebd_b,
@@ -50,7 +88,33 @@ def init_hmp(model, z_dim, num_macros, num_policies, store_dir):
         hmp.belief_vae.load_state_dict(pickle.load(f)['state_dict'])
     return hmp
 
-def e_step(hmp, knowns, beliefs, actions):
+def e_step(
+    hmp: HiddenMarkovPolicy,
+    knowns: list[Tensor], beliefs: list[Tensor], actions: list[Tensor],
+) -> tuple[list[Tensor], list[Tensor], list[Tensor]]:
+    r"""Performs one expectation step.
+
+    Args
+    ----
+    hmp:
+        Hidden Markov policy object, see `init_hmp` for more details.
+    knowns: [(num_steps, .)]
+        Known states of each block.
+    beliefs: [(num_steps, .)]
+        Model-based beliefs of each block.
+    actions: [(num_steps,)]
+        Actions taken by the agent in each block.
+
+    Returns
+    -------
+    log_gammas: [(num_steps, num_policies)]
+        Posterior of policy variable at each time step.
+    log_xis: [(num_steps, num_policies, num_policies)]
+        Pseudocounts of transitions at each time step.
+    log_Zs: [scalar]
+        Data likelihood of each block.
+
+    """
     log_gammas, log_xis, log_Zs = [], [], []
     for _knowns, _beliefs, _actions in zip(knowns, beliefs, actions):
         _, _, _log_gammas, _log_xis, _log_Z = hmp.e_step(_knowns, _beliefs, _actions)
@@ -59,84 +123,163 @@ def e_step(hmp, knowns, beliefs, actions):
         log_Zs.append(_log_Z)
     return log_gammas, log_xis, log_Zs
 
-def m_step(hmp, knowns, beliefs, actions, log_gammas, log_xis, **kwargs):
+def m_step(
+    hmp: HiddenMarkovPolicy,
+    knowns: list[Tensor], beliefs: list[Tensor], actions: list[Tensor],
+    log_gammas: list[Tensor], log_xis: list[Tensor],
+    alpha_A: float, l2_reg: float, ent_reg: float, kl_reg: float,
+) -> dict:
+    r"""Performs one maximization step.
+
+    Args
+    ----
+    hmp:
+        Hidden Markov policy object, see `init_hmp` for more details.
+    knowns, beliefs, actions:
+        Sequential data, see `e_step` for more details.
+    log_gammas, log_xis:
+        Output of the expectation step, see `e_step` for more details.
+    alpha_A:
+        Diagonal prior for estimating the transition matrix. `alpha_A>0` prefers
+        stable dynamics, while `alpha_A<0` prefers switching between policies.
+    l2_reg, ent_reg, kl_reg:
+        Regularization coefficients used in policy learning.
+
+    Returns
+    -------
+    stats:
+        Statistics for training policy networks, see `HiddenMarkovPolicy.m_step`
+        for more details.
+
+    """
     hmp.update_pi(log_gammas)
-    hmp.update_A(log_xis)
+    hmp.update_A(log_xis, alpha_A)
     stats = hmp.m_step(
-        torch.cat(knowns), torch.cat(beliefs), torch.cat(actions),
-        torch.cat(log_gammas), **kwargs
+        torch.cat(knowns), torch.cat(beliefs), torch.cat(actions), torch.cat(log_gammas),
+        l2_reg=l2_reg, ent_reg=ent_reg, kl_reg=kl_reg,
     )
     return stats
+
+def create_manager(
+    data_dir: Path, store_dir: Path, subject: str,
+    block_ids: list[tuple[str, int]],
+    num_samples: int, num_macros: int,
+) -> Manager:
+    r"""Creates a manger for hidden Markov policy learning.
+
+    Args
+    ----
+    data_dir, store_dir:
+        Directory of data and storage respectively.
+    subject_dir:
+        Subject name.
+    block_ids:
+        The block ID `(session_id, block_idx)` of all blocks to be processed.
+    num_samples, num_macros:
+        See `collect_data` for more details.
+
+    Returns
+    -------
+    manager:
+        A manager that performs hidden Markov policy learning with different
+        hyperparameters.
+
+    """
+    _, model = create_model(subject)
+    num_blocks = len(block_ids)
+    knowns, beliefs, actions = collect_data(
+        data_dir, store_dir, subject, block_ids, num_samples, num_macros,
+    )
+    ws = { # workspace
+        'knowns': knowns, 'beliefs': beliefs, 'actions': actions,
+    }
+    def setup(config: Config):
+        r"""
+        config:
+          - seed: int
+          - num_samples: int
+          - z_dim: int
+          - num_policies: int
+          - num_macros: int
+          - reg_coefs:
+            - alpha_A: float
+            - l2_reg: float
+            - ent_reg: float
+            - kl_reg: float
+
+        """
+        assert config.num_samples==num_samples
+        assert config.num_macros==num_macros
+        hmp = init_hmp(
+            model, config.z_dim, config.num_macros, config.num_policies, store_dir,
+        )
+        hmp.reset(config.seed)
+        pis, As, lls = [], [], []
+        gammas, log_Zs = [[] for _ in range(num_blocks)], []
+        ws.update({
+            'config': config, 'hmp': hmp, 'pis': pis, 'As': As, 'lls': lls,
+            'gammas': gammas, 'log_Zs': log_Zs,
+        })
+        return float('inf') # no limit on EM iterations
+    def reset():
+        log_gammas, log_xis, _ = e_step(
+            ws['hmp'], ws['knowns'], ws['beliefs'], ws['actions'],
+        )
+        ws.update({'log_gammas': log_gammas, 'log_xis': log_xis})
+    def step():
+        knowns, beliefs, actions = ws['knowns'], ws['beliefs'], ws['actions']
+        hmp, config = ws['hmp'], ws['config']
+        stats = m_step(
+            hmp, knowns, beliefs, actions,
+            ws['log_gammas'], ws['log_xis'], **config.reg_coefs,
+        )
+        ws['pis'].append(hmp.log_pi.exp())
+        ws['As'].append(hmp.log_A.exp())
+        ws['lls'].append(-stats['losses_val'][-1][0])
+
+        ws['log_gammas'], ws['log_xis'], _log_Zs = e_step(hmp, knowns, beliefs, actions)
+        for i in range(num_blocks):
+            ws['gammas'][i].append(ws['log_gammas'][i].exp())
+        ws['log_Zs'].append(_log_Zs)
+    def get_ckpt():
+        return tensor2array({k: ws[k] for k in [
+            'knowns', 'beliefs', 'actions', 'pis', 'As', 'lls',
+            'gammas', 'log_Zs', 'log_gammas', 'log_xis',
+        ]})
+    def load_ckpt(ckpt):
+        ws.update(array2tensor(ckpt, model.device))
+        return len(ws['lls'])
+
+    manager = Manager(store_dir=Path(store_dir)/'policies'/subject)
+    manager.setup = setup
+    manager.reset = reset
+    manager.step = step
+    manager.get_ckpt = get_ckpt
+    manager.load_ckpt = load_ckpt
+    manager.ws = ws
+    return manager
+
 
 def main(
     data_dir: Path|str,
     store_dir: Path|str,
     subject: str,
     num_samples: int = 1000,
-    z_dim: int = 3,
-    num_policies: int = 3,
     num_macros: int = 10,
+    choices: Path|str = 'hmp_spec.yaml',
     num_iters: int = 50,
-    m_step_kw: dict|None = None
+    num_works: int|None = None,
 ):
-    m_step_kw = Config(m_step_kw).fill({
-        'l2_reg': 1e-3, 'ent_reg': 1e-4, 'kl_reg': 1e-3,
-    })
-
-    data_path = Path(data_dir)/f'data_{subject}.mat'
-    block_ids = prepare_blocks(data_path, subject)
-    num_blocks = len(block_ids)
-    env, model = create_default_model(subject)
-
-    store_dir = Path(store_dir)
-    manager = create_manager(data_path, env, model, store_dir/'beliefs'/subject)
-    knowns, beliefs, actions = collect_data(
-        block_ids, data_path, env, manager, num_samples, num_macros,
+    data_dir, store_dir = Path(data_dir), Path(store_dir)
+    block_ids = prepare_blocks(data_dir, subject)
+    manager = create_manager(
+        data_dir, store_dir, subject, block_ids, num_samples, num_macros,
     )
-    num_steps = sum([len(a) for a in actions])
-    hmp = init_hmp(model, z_dim, num_macros, num_policies, store_dir)
-
-    pis, As, lls = [], [], []
-    gammas, log_Zs = [[] for _ in range(num_blocks)], []
-    log_gammas, log_xis, _ = e_step(hmp, knowns, beliefs, actions)
-    with tqdm(total=num_iters, unit='iter') as pbar:
-        for _ in range(num_iters):
-            stats = m_step(hmp, knowns, beliefs, actions, log_gammas, log_xis, **m_step_kw)
-            pis.append(hmp.log_pi.exp())
-            As.append(hmp.log_A.exp())
-            lls.append(stats['lls'][-1])
-
-            log_gammas, log_xis, _log_Zs = e_step(hmp, knowns, beliefs, actions)
-            for i in range(num_blocks):
-                gammas[i].append(log_gammas[i].exp())
-            log_Zs.append(_log_Zs)
-
-            pbar.set_description('log(Z): {:.3f}'.format(np.sum(_log_Zs)/num_steps))
-            pbar.update()
-    pis = torch.stack(pis).numpy()
-    As = torch.stack(As).numpy()
-    lls = np.array(lls)
-    for i in range(num_blocks):
-        gammas[i] = torch.stack(gammas[i]).numpy()
-    log_Zs = np.array(log_Zs)
-
-    save_path = store_dir/'policies_{}_[Dz{:02d}][Np{:d}][Na{:d}].pkl'.format(
-        subject, z_dim, num_policies, num_macros,
+    configs = choices2configs(store_dir/choices, num_works)
+    manager.batch(
+        configs, num_iters, num_works,
+        process_kw={'pbar_kw.unit': 'iter'},
     )
-    with open(save_path, 'wb') as f:
-        pickle.dump({
-            'num_samples': num_samples, 'z_dim': z_dim,
-            'num_policies': num_policies,
-            'num_macros': num_macros,
-            'num_iters': num_iters,
-            'm_step_kw': m_step_kw,
-            'pis': pis, 'As': As, 'lls': lls,
-            'gammas': gammas, 'log_Zs': log_Zs,
-            'policies': [
-                {k: v.clone() for k, v in policy.state_dict().items()}
-                for policy in hmp.policies
-            ],
-        }, f)
 
 
 if __name__=='__main__':
