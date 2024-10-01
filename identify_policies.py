@@ -163,7 +163,7 @@ def m_step(
 def create_manager(
     data_dir: Path, store_dir: Path, subject: str,
     block_ids: list[tuple[str, int]],
-    num_samples: int, num_macros: int,
+    num_samples: int = 1000, num_macros: int = 10,
 ) -> Manager:
     r"""Creates a manger for hidden Markov policy learning.
 
