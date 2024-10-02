@@ -242,12 +242,25 @@ def create_manager(
             ws['gammas'][i].append(ws['log_gammas'][i].exp())
         ws['log_Zs'].append(_log_Zs)
     def get_ckpt():
-        return tensor2array({k: ws[k] for k in [
-            'knowns', 'beliefs', 'actions', 'pis', 'As', 'lls',
-            'gammas', 'log_Zs', 'log_gammas', 'log_xis',
-        ]})
+        hmp = ws['hmp']
+        return tensor2array({
+            'workspace': {k: ws[k] for k in [
+                'knowns', 'beliefs', 'actions', 'pis', 'As', 'lls',
+                'gammas', 'log_Zs', 'log_gammas', 'log_xis',
+            ]},
+            'log_pi': hmp.log_pi, 'log_A': hmp.log_A,
+            'policies': [
+                policy.state_dict() for policy in hmp.policies
+            ],
+        })
     def load_ckpt(ckpt):
-        ws.update(array2tensor(ckpt, model.device))
+        ckpt = array2tensor(ckpt, model.device)
+        ws.update(ckpt['workspace'])
+        hmp = ws['hmp']
+        hmp.log_pi = ckpt['log_pi']
+        hmp.log_A = ckpt['log_A']
+        for i, policy in enumerate(hmp.policies):
+            policy.load_state_dict(ckpt['policies'][i])
         return len(ws['lls'])
 
     manager = Manager(store_dir=Path(store_dir)/'policies'/subject)
