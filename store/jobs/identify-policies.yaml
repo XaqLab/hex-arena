@@ -1,0 +1,61 @@
+apiVersion: batch/v1 # Jobs Default K8 API
+kind: Job # This tells kubernetes what kind of class it is working with
+metadata:
+  name: marco-a10-hmp # Name of the Job
+spec:
+  completions: 100
+  parallelism: 40
+  template: # Pod Templete
+    metadata:
+      labels:
+        app: blender
+    spec:
+      restartPolicy: Never # Options are OnFailure, and Never.
+      hostNetwork: true # This option will allow the pod to use the host network for internet access
+      priorityClassName: # Set the pod to be low priority meaning it will be evicted by default and higher priority pods
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 6G
+      - name: data # name for the volume to be reference in container volumeMounts
+        hostPath:
+          path: /mnt/scratch09/zhe/hex-arena/data # Directory on the host machine to be mounted
+      - name: store
+        hostPath:
+          path: /mnt/scratch09/zhe/hex-arena/store
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpu_mem_size # Target label is gpu_mem_size
+                operator: NotIn # Key must have one of the following values
+                values:
+                - 12GB
+                - 24GB
+                - 32GB
+              - key: kubernetes.io/hostname # Target label is gpu_mem_size
+                operator: NotIn # Key must have one of the following values
+                values:
+                - at-compute006
+      containers: # Container Level
+      - name: hex-arena # Container name
+        image: at-docker.stanford.edu:5000/zhe-hexarena
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 16
+            memory: 16G
+          limits:
+            cpu: 20
+            memory: 32G
+        volumeMounts: # Container reference to volumes define above
+        - name: dshm
+          mountPath: /dev/shm
+        - name: data
+          mountPath: /hex-arena/data
+        - name: store
+          mountPath: /hex-arena/store
+        command: ["/bin/bash"] # Entry point for the container
+        args: ["-c", "python -u identify_policies.py subject=marco max_wait=10 num_works=6 choices='hmp_spec_A10.yaml' num_macros=10"] # sh commands to clone and run python script
