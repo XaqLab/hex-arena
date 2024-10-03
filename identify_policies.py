@@ -164,6 +164,7 @@ def create_manager(
     data_dir: Path, store_dir: Path, subject: str,
     block_ids: list[tuple[str, int]],
     num_samples: int = 1000, num_macros: int = 10,
+    patience: float = 12.,
 ) -> Manager:
     r"""Creates a manger for hidden Markov policy learning.
 
@@ -263,7 +264,7 @@ def create_manager(
             policy.load_state_dict(ckpt['policies'][i])
         return len(ws['lls'])
 
-    manager = Manager(store_dir=Path(store_dir)/'policies'/subject)
+    manager = Manager(store_dir=Path(store_dir)/'policies'/subject, patience=patience)
     manager.setup = setup
     manager.reset = reset
     manager.step = step
@@ -282,11 +283,12 @@ def main(
     choices: Path|str = 'hmp_spec_A10.yaml',
     num_iters: int = 50,
     num_works: int|None = None,
+    patience: float = 12.,
 ):
     data_dir, store_dir = Path(data_dir), Path(store_dir)
     block_ids = prepare_blocks(data_dir, subject)
     manager = create_manager(
-        data_dir, store_dir, subject, block_ids, num_samples, num_macros,
+        data_dir, store_dir, subject, block_ids, num_samples, num_macros, patience,
     )
     configs = choices2configs(store_dir/choices, num_works)
     manager.batch(
