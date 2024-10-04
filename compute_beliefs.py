@@ -45,7 +45,7 @@ def prepare_blocks(data_dir: Path, subject: str) -> list[tuple[str, int]]:
                 if np.all(block_data['kappas']==0.01) and set(block_data['taus'])==set([15., 21., 35.]):
                     to_process = True
             if subject=='viktor':
-                if set(block_data['taus'])==set([7., 14., 21.]):
+                if np.all(block_data['kappas']==0.) and set(block_data['taus'])==set([7., 14., 21.]):
                     to_process = True
             if to_process:
                 block_ids.append((session_id, block_idx))
@@ -84,7 +84,8 @@ def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefMod
     if subject=='viktor':
         env = SimilarBoxForagingEnv(
             box={
-                '_target_': 'hexarena.box.GammaLinearBox', 'num_patches': 1, 'num_levels': 40,
+                '_target_': 'hexarena.box.GammaLinearBox',
+                'num_patches': 1, 'max_interval': 40,
             },
             boxes=[{'tau': tau} for tau in [21, 14, 7]],
         )
@@ -234,6 +235,7 @@ def main(
     np.random.default_rng().shuffle(configs)
     manager.batch(
         configs, num_works=num_works, pbar_kw={'unit': 'block', 'leave': True},
+        process_kw={'pbar_kw': {'unit': 'step'}},
     )
 
 if __name__=='__main__':

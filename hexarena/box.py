@@ -438,29 +438,27 @@ class GammaLinearBox(BaseFoodBox):
         Expectation of drawn reward intervals.
     shape:
         Shape parameter of the Gamma distribution to draw reward intervals.
-    num_levels:
-        Number of discrete levels for reward interval. It determines the upper
-        bound of interval as `num_levels*dt`.
+    max_interval:
+        The upper bound of drawn interval is `max_interval*dt`.
 
     """
 
-    level: int # drawn reward interval, [1, num_levels]
-    timer: int # time since last push, [0, level]
+    timer: int # time since last push, [0, interval]
 
     def __init__(self,
         tau: float = 14.,
         shape: float = 10.,
-        num_levels: int = 50,
+        max_interval: int = 50,
         **kwargs,
     ):
-        super().__init__(num_levels=num_levels, **kwargs)
+        super().__init__(num_levels=max_interval, **kwargs)
         self.scale = tau/shape
         self.shape = shape
-        assert self.num_levels>=stats.gamma.ppf(0.99, self.shape, scale=self.scale)/self.dt, (
-            f"'num_levels' {self.num_levels} too small for "
+        assert max_interval>=stats.gamma.ppf(0.99, self.shape, scale=self.scale)/self.dt, (
+            f"'max_interval' {max_interval} too small for "
             f"the Gamma distribution ({self.shape}, {self.scale})"
         )
-        self.state_space = MultiDiscrete([self._state_count(self.num_levels)])
+        self.state_space = MultiDiscrete([self._state_count(max_interval)])
         self.param_names += ['tau']
 
     def __repr__(self) -> str:
@@ -477,6 +475,17 @@ class GammaLinearBox(BaseFoodBox):
             'shape': self.shape, 'scale': self.scale,
         })
         return spec
+
+    @property # max interval
+    def max_interval(self) -> int:
+        return self.num_levels
+
+    @property # drawn interval, [1, max_interval]
+    def interval(self) -> int:
+        return self.level
+    @interval.setter
+    def interval(self, val):
+        self.level = val
 
     @property
     def food(self) -> bool:
@@ -498,27 +507,27 @@ class GammaLinearBox(BaseFoodBox):
             super()._set_param(name, val)
 
     @staticmethod
-    def _state_count(num_levels: int) -> int:
+    def _state_count(max_interval: int) -> int:
         r"""Returns total number of states up to given level.
 
-        `timer` ranges in `[0, level]` and `level` ranges in `[1, num_levels]`.
+        `timer` ranges in `[0, interval]` and `interval` ranges in `[1, max_interval]`.
 
         """
-        return num_levels*(num_levels+3)//2
+        return max_interval*(max_interval+3)//2
 
     @staticmethod
-    def _sub2idx(level: int, timer: int) -> int:
+    def _sub2idx(interval: int, timer: int) -> int:
         r"""Converts tuple state to index.
 
         Args
         ----
-        level:
-            Current level, starting from 1.
+        interval:
+            Current drawn interval, in `[1, max_interval]`.
         timer:
             Current timer, ranging in `[0, level]`.
 
         """
-        return GammaLinearBox._state_count(level-1)+timer
+        return GammaLinearBox._state_count(interval-1)+timer
 
     @staticmethod
     def _idx2sub(state_idx: int) -> tuple[int, int]:
@@ -531,53 +540,53 @@ class GammaLinearBox(BaseFoodBox):
 
         Returns
         -------
-        level, timer:
-            Current level and timer corresponding to `state_idx`.
+        interval, timer:
+            Current drawn interval and timer corresponding to `state_idx`.
 
         """
-        level = 1
-        while GammaLinearBox._state_count(level)<=state_idx:
-            level += 1
-        timer = state_idx-GammaLinearBox._state_count(level-1)
-        return level, timer
+        interval = 1
+        while GammaLinearBox._state_count(interval)<=state_idx:
+            interval += 1
+        timer = state_idx-GammaLinearBox._state_count(interval-1)
+        return interval, timer
 
     def get_state(self) -> BoxState:
         r"""Returns box state.
 
         Box state is the index of the ordered sequence of all possible
-        (level, timer) tuples.
+        `(interval, timer)` tuples.
 
         """
-        state = (self._sub2idx(self.level, self.timer),)
+        state = (self._sub2idx(self.interval, self.timer),)
         return state
 
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
-        self.level, self.timer = self._idx2sub(state[0])
+        self.interval, self.timer = self._idx2sub(state[0])
 
     def render(self) -> None:
-        cue = (self.timer+0.5)/(self.level+1) # color cue marks the progress towards reward
+        cue = (self.timer+0.5)/(self.interval+1) # color cue marks the progress towards reward
         self._set_colors(cue)
 
     def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""
-        level = int(np.ceil(self.rng.gamma(self.shape, self.scale)/self.dt))
-        self.level = min(level, self.num_levels)
+        interval = int(np.ceil(self.rng.gamma(self.shape, self.scale)/self.dt))
+        self.interval = min(interval, self.max_interval)
         self.timer = 0
 
     def _step(self, push: bool) -> None:
         if push:
             self._reset()
         else:
-            self.timer = min(self.timer+1, self.level)
+            self.timer = min(self.timer+1, self.interval)
 
 
 class LinearBoxStateEmbedder(BaseEmbedder):
     r"""State embedder for linear color box state.
 
-    The box state is two integers `(level, timer)`. Instead of encoding them by
-    huge one-hot vector(s), the embedder directly uses the two float numbers as
-    feature.
+    The box state is two integers `(interval, timer)`. Instead of encoding them
+    by huge one-hot vector(s), the embedder directly uses two float numbers as
+    feature, the scaled interval `interval/20` and progress `timer/interval`.
 
     Args
     ----
@@ -590,18 +599,18 @@ class LinearBoxStateEmbedder(BaseEmbedder):
     def __init__(self, spaces: list[DiscreteVarSpace]):
         assert len(spaces)==1 and isinstance(spaces[0], DiscreteVarSpace)
 
-        num_levels = 0
-        while GammaLinearBox._state_count(num_levels)<spaces[0].n:
-            num_levels += 1
-        assert GammaLinearBox._state_count(num_levels)==spaces[0].n, (
+        max_interval = 0
+        while GammaLinearBox._state_count(max_interval)<spaces[0].n:
+            max_interval += 1
+        assert GammaLinearBox._state_count(max_interval)==spaces[0].n, (
             f"Invalid space dimension ({spaces[0].n})"
         )
-        self.num_levels = num_levels
+        self.max_interval = max_interval
         super().__init__(spaces)
         self.feat_dim = 2 # (level, timer)
 
     def __repr__(self) -> str:
-        return f"Embedder for linear box with {self.num_levels} levels."
+        return f"Embedder for linear box with max interval {self.max_interval}."
 
     @property
     def spec(self) -> dict:
@@ -614,7 +623,7 @@ class LinearBoxStateEmbedder(BaseEmbedder):
     def embed(self, xs: Tensor) -> Tensor:
         feats = []
         for x in xs:
-            level, timer = GammaLinearBox._idx2sub(int(x.item()))
-            feats.append((level, timer))
+            interval, timer = GammaLinearBox._idx2sub(int(x.item()))
+            feats.append((interval/20, timer/interval))
         feats = torch.tensor(feats, dtype=torch.float, device=xs.device)
         return feats
