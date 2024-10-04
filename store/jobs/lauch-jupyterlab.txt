@@ -1,4 +1,4 @@
-docker run -it --rm -pull always -p 8888:8888 \
+docker run -it --rm --pull always -p 8888:8888 \
     --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/data,destination=/hex-arena/data \
     --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/store,destination=/hex-arena/store \
     at-docker.stanford.edu:5000/zhe-hexarena

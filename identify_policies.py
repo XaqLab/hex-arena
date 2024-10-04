@@ -1,12 +1,13 @@
 import pickle, torch
 from pathlib import Path
+import numpy as np
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.utils import tqdm, tensor2array, array2tensor
 from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 from irc.hmp import HiddenMarkovPolicy
 
-from hexarena.alias import Tensor
+from hexarena.alias import Tensor, Array
 
 from compute_beliefs import prepare_blocks, create_model, fetch_beliefs
 
@@ -273,6 +274,44 @@ def create_manager(
     manager.ws = ws
     return manager
 
+def fetch_results(
+    manager: Manager, config: Config, key: str,
+) -> Tensor|Array:
+    r"""Fetch computed results.
+
+    Args
+    ----
+    manager:
+        The Manager object returned by `create_manager`, containing the full
+        progress of hidden Markov policy learning.
+    config:
+        The computation config, see `create_manager.setup` for more details.
+    key:
+        Key for the field of interest in result, see comments for more details.
+
+    """
+    ckpt = array2tensor(manager.ckpts[manager.configs.get_key(config)])
+    if key=='log_pi': # learned initial distribution
+        return ckpt['log_pi']
+    elif key=='log_A': # learned transition matrix
+        return ckpt['log_A']
+    elif key=='policies': # state dict of learned policies
+        return ckpt['policies']
+    elif key=='pis': # history of initial distribution
+        return torch.stack(ckpt['workspace']['pis']) # (num_iters, num_policies)
+    elif key=='As': # history of transition matrix
+        return torch.stack(ckpt['workspace']['As']) # (num_iters, num_policies, num_policies)
+    elif key=='lls': # history of log likelihoods on validation set
+        return np.array(ckpt['workspace']['lls']) # (num_iters,)
+    elif key=='gammas': # history of posteriors
+        gammas = ckpt['workspace']['gammas']
+        return [torch.stack(gammas[i]) for i in range(len(gammas))] # (num_iters, num_steps, num_policies)
+    elif key=='log_Zs': # history of data likelihood
+        total_steps = sum([len(a) for a in ckpt['workspace']['actions']])
+        log_Zs = np.array(ckpt['workspace']['log_Zs']).sum(axis=1)/total_steps
+        return log_Zs # (num_iters,)
+    else:
+        raise RuntimeError(f"{key} not recognized")
 
 def main(
     data_dir: Path|str,
