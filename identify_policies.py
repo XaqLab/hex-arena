@@ -199,6 +199,7 @@ def create_manager(
         r"""
         config:
           - seed: int
+          - split: float # optional, training blocks split
           - num_samples: int
           - z_dim: int
           - num_policies: int
@@ -216,8 +217,12 @@ def create_manager(
             model, config.z_dim, config.num_macros, config.num_policies, store_dir,
         )
         hmp.reset(config.seed)
+        if 'split' in config:
+            idxs = hmp.rng.choice(num_blocks, int(num_blocks*config.split), replace=False)
+            for key in ['knowns', 'beliefs', 'actions']:
+                ws[key] = [ws[key][i] for i in idxs]
         pis, As, lls = [], [], []
-        gammas, log_Zs = [[] for _ in range(num_blocks)], []
+        gammas, log_Zs = [[] for _ in range(len(ws['actions']))], []
         ws.update({
             'config': config, 'hmp': hmp, 'pis': pis, 'As': As, 'lls': lls,
             'gammas': gammas, 'log_Zs': log_Zs,
@@ -240,7 +245,7 @@ def create_manager(
         ws['lls'].append(-stats['losses_val'][-1][0])
 
         ws['log_gammas'], ws['log_xis'], _log_Zs = e_step(hmp, knowns, beliefs, actions)
-        for i in range(num_blocks):
+        for i in range(len(ws['gammas'])):
             ws['gammas'][i].append(ws['log_gammas'][i].exp())
         ws['log_Zs'].append(_log_Zs)
     def get_ckpt():
