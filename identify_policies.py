@@ -194,6 +194,7 @@ def create_manager(
     )
     ws = { # workspace
         'knowns': knowns, 'beliefs': beliefs, 'actions': actions,
+        'idxs': np.arange(num_blocks), # training blocks
     }
     def setup(config: Config):
         r"""
@@ -218,23 +219,27 @@ def create_manager(
         )
         hmp.reset(config.seed)
         if 'split' in config:
-            idxs = hmp.rng.choice(num_blocks, int(num_blocks*config.split), replace=False)
-            for key in ['knowns', 'beliefs', 'actions']:
-                ws[key] = [ws[key][i] for i in idxs]
+            ws['idxs'] = hmp.rng.choice(num_blocks, int(num_blocks*config.split), replace=False)
         pis, As, lls = [], [], []
-        gammas, log_Zs = [[] for _ in range(len(ws['actions']))], []
+        gammas, log_Zs = [[] for _ in range(len(ws['idxs']))], []
         ws.update({
             'config': config, 'hmp': hmp, 'pis': pis, 'As': As, 'lls': lls,
             'gammas': gammas, 'log_Zs': log_Zs,
         })
         return float('inf') # no limit on EM iterations
+    def _get_tensors():
+        knowns, beliefs, actions = [], [], []
+        for i in ws['idxs']:
+            knowns.append(ws['knowns'][i])
+            beliefs.append(ws['beliefs'][i])
+            actions.append(ws['actions'][i])
+        return knowns, beliefs, actions
     def reset():
-        log_gammas, log_xis, _ = e_step(
-            ws['hmp'], ws['knowns'], ws['beliefs'], ws['actions'],
-        )
+        knowns, beliefs, actions = _get_tensors()
+        log_gammas, log_xis, _ = e_step(ws['hmp'], knowns, beliefs, actions)
         ws.update({'log_gammas': log_gammas, 'log_xis': log_xis})
     def step():
-        knowns, beliefs, actions = ws['knowns'], ws['beliefs'], ws['actions']
+        knowns, beliefs, actions = _get_tensors()
         hmp, config = ws['hmp'], ws['config']
         stats = m_step(
             hmp, knowns, beliefs, actions,
@@ -347,7 +352,7 @@ def main(
         process_kw={'pbar_kw.unit': 'iter'},
     )
 
-
+''
 if __name__=='__main__':
     main(**from_cli().fill({
         'data_dir': DATA_DIR,
