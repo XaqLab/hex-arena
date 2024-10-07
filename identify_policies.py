@@ -276,7 +276,7 @@ def create_manager(
 
 def fetch_results(
     manager: Manager, config: Config, key: str,
-) -> Tensor|Array:
+):
     r"""Fetch computed results.
 
     Args
@@ -290,28 +290,35 @@ def fetch_results(
         Key for the field of interest in result, see comments for more details.
 
     """
-    ckpt = array2tensor(manager.ckpts[manager.configs.get_key(config)])
+    manager.setup(config)
+    manager.load_ckpt(manager.ckpts[manager.configs.get_key(config)])
+    hmp = manager.ws['hmp']
     if key=='log_pi': # learned initial distribution
-        return ckpt['log_pi']
+        return hmp.log_pi
     elif key=='log_A': # learned transition matrix
-        return ckpt['log_A']
+        return hmp.log_A
     elif key=='policies': # state dict of learned policies
-        return ckpt['policies']
+        return hmp.policies
     elif key=='pis': # history of initial distribution
-        return torch.stack(ckpt['workspace']['pis']) # (num_iters, num_policies)
+        return torch.stack(manager.ws['pis']) # (num_iters, num_policies)
     elif key=='As': # history of transition matrix
-        return torch.stack(ckpt['workspace']['As']) # (num_iters, num_policies, num_policies)
+        return torch.stack(manager.ws['As']) # (num_iters, num_policies, num_policies)
     elif key=='lls': # history of log likelihoods on validation set
-        return np.array(ckpt['workspace']['lls']) # (num_iters,)
+        return np.array(manager.ws['lls']) # (num_iters,)
     elif key=='gammas': # history of posteriors
-        gammas = ckpt['workspace']['gammas']
+        gammas = manager.ws['gammas']
         return [torch.stack(gammas[i]) for i in range(len(gammas))] # (num_iters, num_steps, num_policies)
     elif key=='log_Zs': # history of data likelihood
-        total_steps = sum([len(a) for a in ckpt['workspace']['actions']])
-        log_Zs = np.array(ckpt['workspace']['log_Zs']).sum(axis=1)/total_steps
+        total_steps = sum([len(a) for a in manager.ws['actions']])
+        log_Zs = np.array(manager.ws['log_Zs']).sum(axis=1)/total_steps
         return log_Zs # (num_iters,)
+    elif key=='ent': # entropy of marginal policy distribution
+        gammas = manager.ws['gammas']
+        probs = torch.cat([gammas[i][-1] for i in range(len(gammas))]).mean(dim=0)
+        ent = -(probs*torch.log(probs)).sum()
+        return ent
     else:
-        raise RuntimeError(f"{key} not recognized")
+        raise RuntimeError(f"Key '{key}' not recognized")
 
 def main(
     data_dir: Path|str,
