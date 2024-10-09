@@ -303,7 +303,7 @@ def fetch_results(
     """
     manager.setup(config)
     manager.load_ckpt(manager.ckpts[manager.configs.get_key(config)])
-    hmp = manager.ws['hmp']
+    hmp: HiddenMarkovPolicy = manager.ws['hmp']
     if key=='log_pi': # learned initial distribution
         return hmp.log_pi
     elif key=='log_A': # learned transition matrix
@@ -328,6 +328,19 @@ def fetch_results(
         probs = torch.cat([gammas[i][-1] for i in range(len(gammas))]).mean(dim=0)
         ent = -(probs*torch.log(probs)).sum()
         return ent
+    elif key=='ll_val': # log likelihoods on validation blocks
+        knowns, beliefs, actions = [], [], []
+        for i in np.setdiff1d(np.arange(len(manager.ws['actions'])), manager.ws['idxs']):
+            knowns.append(manager.ws['knowns'][i])
+            beliefs.append(manager.ws['beliefs'][i])
+            actions.append(manager.ws['actions'][i])
+        log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
+        gammas = torch.cat(log_gammas).exp()
+        with torch.no_grad():
+            inputs = hmp.policy_inputs(torch.cat(knowns), torch.cat(beliefs))
+            _, logps = hmp.action_probs(inputs)
+            lls = (hmp.emission_probs(logps, torch.cat(actions))*gammas).sum(dim=1)
+        return lls.mean().item()
     else:
         raise RuntimeError(f"Key '{key}' not recognized")
 
