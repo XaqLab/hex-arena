@@ -58,7 +58,7 @@ def collect_data(
 def init_hmp(
     model: SamplingBeliefModel,
     z_dim: int, num_macros: int, num_policies: int,
-    store_dir: Path,
+    store_dir: Path, seed: int|None = None
 ) -> HiddenMarkovPolicy:
     r"""Initializes a hidden Markov policy object.
 
@@ -84,6 +84,8 @@ def init_hmp(
         model.p_s, z_dim, num_macros, num_policies=num_policies,
         ebd_k=model.ebd_k, ebd_b=model.ebd_b,
     )
+    if seed is not None:
+        hmp.reset(seed)
     vae_path = store_dir/'belief_vaes/belief.vae_[Dz{:02d}].pkl'.format(z_dim)
     with open(vae_path, 'rb') as f:
         hmp.belief_vae.load_state_dict(pickle.load(f)['state_dict'])
@@ -215,9 +217,8 @@ def create_manager(
         assert config.num_samples==num_samples
         assert config.num_macros==num_macros
         hmp = init_hmp(
-            model, config.z_dim, config.num_macros, config.num_policies, store_dir,
+            model, config.z_dim, config.num_macros, config.num_policies, store_dir, config.seed,
         )
-        hmp.reset(config.seed)
         if 'split' in config:
             ws['idxs'] = hmp.rng.choice(num_blocks, int(num_blocks*config.split), replace=False)
         pis, As, lls = [], [], []
