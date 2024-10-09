@@ -58,7 +58,7 @@ def collect_data(
 def init_hmp(
     model: SamplingBeliefModel,
     z_dim: int, num_macros: int, num_policies: int,
-    store_dir: Path, seed: int|None = None
+    store_dir: Path, seed: int|None = None,
 ) -> HiddenMarkovPolicy:
     r"""Initializes a hidden Markov policy object.
 
