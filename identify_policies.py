@@ -260,12 +260,27 @@ def create_manager(
         ws['log_Zs'].append(log_Zs)
     def get_ckpt():
         hmp = ws['hmp']
+        knowns, beliefs, actions = ws['knowns'], ws['beliefs'], ws['actions']
+        log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
+        lls_train, lls_test = [], []
+        for i in range(len(actions)):
+            t_train = int(len(actions[i])*ws['config'].split)
+            gammas = log_gammas[i].exp()
+            with torch.no_grad():
+                inputs = hmp.policy_inputs(knowns[i], beliefs[i])
+                _, logps = hmp.action_probs(inputs)
+                lls = (hmp.emission_probs(logps, actions[i])*gammas).sum(dim=1)
+                lls_train.append(lls[:t_train])
+                lls_test.append(lls[t_train:])
+        ll_train = torch.cat(lls_train).mean().item()
+        ll_test = torch.cat(lls_test).mean().item()
         return tensor2array({
             'workspace': {k: ws[k] for k in [
                 'pis', 'As', 'lls', 'gammas', 'log_Zs', 'log_gammas', 'log_xis',
             ]},
             'log_pi': hmp.log_pi, 'log_A': hmp.log_A,
             'policies': [policy.state_dict() for policy in hmp.policies],
+            'll_train': ll_train, 'll_test': ll_test,
         })
     def load_ckpt(ckpt):
         ckpt = array2tensor(ckpt, model.device)
@@ -331,30 +346,6 @@ def fetch_results(
         ent = -(probs*torch.log(probs)).sum()
         return ent
     elif key in ['ll_train', 'll_test']: # log likelihood on training/testing segments
-        if key not in ckpt:
-            knowns = manager.ws['knowns']
-            beliefs = manager.ws['beliefs']
-            actions = manager.ws['actions']
-            log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
-            lls = []
-            for i in range(len(actions)):
-                t_train = int(len(actions[i])*config.split)
-                gammas = log_gammas[i][:t_train].exp()
-                with torch.no_grad():
-                    inputs = hmp.policy_inputs(knowns[i][:t_train], beliefs[i][:t_train])
-                    _, logps = hmp.action_probs(inputs)
-                    lls.append((hmp.emission_probs(logps, actions[i][:t_train])*gammas).sum(dim=1))
-            ckpt['ll_train'] = torch.cat(lls).mean().item()
-            lls = []
-            for i in range(len(actions)):
-                t_train = int(len(actions[i])*config.split)
-                gammas = log_gammas[i][t_train:].exp()
-                with torch.no_grad():
-                    inputs = hmp.policy_inputs(knowns[i][t_train:], beliefs[i][t_train:])
-                    _, logps = hmp.action_probs(inputs)
-                    lls.append((hmp.emission_probs(logps, actions[i][t_train:])*gammas).sum(dim=1))
-            ckpt['ll_test'] = torch.cat(lls).mean().item()
-            manager.ckpts[manager.configs.get_key(config)] = ckpt
         return ckpt[key]
     else:
         raise RuntimeError(f"Key '{key}' not recognized")
