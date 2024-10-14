@@ -303,7 +303,8 @@ def fetch_results(
 
     """
     manager.setup(config)
-    manager.load_ckpt(manager.ckpts[manager.configs.get_key(config)])
+    ckpt = manager.ckpts[manager.configs.get_key(config)]
+    manager.load_ckpt(ckpt)
     hmp: HiddenMarkovPolicy = manager.ws['hmp']
     if key=='log_pi': # learned initial distribution
         return hmp.log_pi
@@ -329,21 +330,32 @@ def fetch_results(
         probs = torch.cat([gammas[i][-1] for i in range(len(gammas))]).mean(dim=0)
         ent = -(probs*torch.log(probs)).sum()
         return ent
-    elif key=='ll_val': # log likelihoods on validation blocks
-        knowns = manager.ws['knowns']
-        beliefs = manager.ws['beliefs']
-        actions = manager.ws['actions']
-        log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
-        lls = []
-        for i in range(len(actions)):
-            t_train = int(len(actions[i])*config.split)
-            gammas = log_gammas[i][t_train:].exp()
-            with torch.no_grad():
-                inputs = hmp.policy_inputs(knowns[i][t_train:], beliefs[i][t_train:])
-                _, logps = hmp.action_probs(inputs)
-                lls.append((hmp.emission_probs(logps, actions[i][t_train:])*gammas).sum(dim=1))
-        lls = torch.cat(lls)
-        return lls.mean().item()
+    elif key in ['ll_train', 'll_test']: # log likelihood on training/testing segments
+        if key not in ckpt:
+            knowns = manager.ws['knowns']
+            beliefs = manager.ws['beliefs']
+            actions = manager.ws['actions']
+            log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
+            lls = []
+            for i in range(len(actions)):
+                t_train = int(len(actions[i])*config.split)
+                gammas = log_gammas[i][:t_train].exp()
+                with torch.no_grad():
+                    inputs = hmp.policy_inputs(knowns[i][:t_train], beliefs[i][:t_train])
+                    _, logps = hmp.action_probs(inputs)
+                    lls.append((hmp.emission_probs(logps, actions[i][:t_train])*gammas).sum(dim=1))
+            ckpt['ll_train'] = torch.cat(lls).mean().item()
+            lls = []
+            for i in range(len(actions)):
+                t_train = int(len(actions[i])*config.split)
+                gammas = log_gammas[i][t_train:].exp()
+                with torch.no_grad():
+                    inputs = hmp.policy_inputs(knowns[i][t_train:], beliefs[i][t_train:])
+                    _, logps = hmp.action_probs(inputs)
+                    lls.append((hmp.emission_probs(logps, actions[i][t_train:])*gammas).sum(dim=1))
+            ckpt['ll_test'] = torch.cat(lls).mean().item()
+            manager.ckpts[manager.configs.get_key(config)] = ckpt
+        return ckpt[key]
     else:
         raise RuntimeError(f"Key '{key}' not recognized")
 
