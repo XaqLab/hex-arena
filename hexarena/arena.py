@@ -123,7 +123,7 @@ class Arena:
 
     def plot_tile(self,
         ax: Axes,
-        tile_idx: int, color = 'none',
+        tile_idx: int, color = 'none', size = 1,
         h_tile: Artist|None = None,
     ) -> Artist:
         r"""Colors one tile.
@@ -136,6 +136,8 @@ class Arena:
             Index of tile to color, in [0, num_tiles).
         color:
             The desired tile color.
+        size:
+            Size of the patch relative to the tile
         h_tile:
             Handle of an existing tile. If is ``None``, create a new one.
             Otherwise update the color and position of provided handle.
@@ -147,7 +149,7 @@ class Arena:
 
         """
         xy = np.stack([
-            np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)
+            np.array([np.cos(theta), np.sin(theta)])/(2*self.resol)*size
             for theta in [i/3*np.pi+np.pi/6 for i in range(6)]
         ])+(self.anchors[tile_idx] if tile_idx>=0 else np.full((2,), fill_value=np.nan))
         if h_tile is None:

@@ -466,7 +466,7 @@ class ForagingEnv(Env):
             h_foods = artists[2:(2+self.num_boxes)]
             h_boxes = artists[(2+self.num_boxes):(2+2*self.num_boxes)]
             h_counts = artists[(2+2*self.num_boxes):(2+3*self.num_boxes)]
-            self.arena.plot_tile(ax, pos, tile_color, h_pos)
+            self.arena.plot_tile(ax, pos, tile_color, h_tile=h_pos)
             h_gaze.set_offsets(self.arena.anchors[gaze] if gaze>=0 else (np.nan, np.nan))
             for i in range(self.num_boxes):
                 h_foods[i].set_color(foods_color[i])
