@@ -1,4 +1,4 @@
-import pickle, torch
+import pickle, torch, yaml
 from pathlib import Path
 import numpy as np
 from jarvis.config import from_cli, choices2configs, Config
@@ -7,13 +7,11 @@ from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 from irc.hmp import HiddenMarkovPolicy
 
-from hexarena.alias import Tensor, Array
+from hexarena import DATA_DIR, STORE_DIR
+from hexarena.alias import Tensor
 
 from compute_beliefs import prepare_blocks, create_model, fetch_beliefs
 
-
-DATA_DIR = Path(__file__).parent/'data'
-STORE_DIR = Path(__file__).parent/'store'
 
 def collect_data(
     data_dir: Path, store_dir: Path, subject: str, block_ids: list[tuple[str, int]],
@@ -130,7 +128,7 @@ def m_step(
     hmp: HiddenMarkovPolicy,
     knowns: list[Tensor], beliefs: list[Tensor], actions: list[Tensor],
     log_gammas: list[Tensor], log_xis: list[Tensor],
-    alpha_A: float, l2_reg: float, ent_reg: float, kl_reg: float,
+    alpha_A: float, l2_reg: float, ent_reg: float,
 ) -> dict:
     r"""Performs one maximization step.
 
@@ -143,10 +141,10 @@ def m_step(
     log_gammas, log_xis:
         Output of the expectation step, see `e_step` for more details.
     alpha_A:
-        Diagonal prior for estimating the transition matrix. `alpha_A>0` prefers
-        stable dynamics, while `alpha_A<0` prefers switching between policies.
-    l2_reg, ent_reg, kl_reg:
-        Regularization coefficients used in policy learning.
+        Dirichlet prior for estimating the transition matrix.
+    l2_reg, ent_reg:
+        Regularization coefficients used in policy learning, see
+        `HiddenMarkovPolicy.m_step` for more details.
 
     Returns
     -------
@@ -159,7 +157,7 @@ def m_step(
     hmp.update_A(log_xis, alpha_A)
     stats = hmp.m_step(
         torch.cat(knowns), torch.cat(beliefs), torch.cat(actions), torch.cat(log_gammas),
-        l2_reg=l2_reg, ent_reg=ent_reg, kl_reg=kl_reg,
+        l2_reg=l2_reg, ent_reg=ent_reg,
     )
     return stats
 
@@ -167,7 +165,7 @@ def create_manager(
     data_dir: Path, store_dir: Path, subject: str,
     block_ids: list[tuple[str, int]],
     num_samples: int = 1000, num_macros: int = 10,
-    patience: float = 12.,
+    patience: float = 4.,
 ) -> Manager:
     r"""Creates a manger for hidden Markov policy learning.
 
@@ -210,7 +208,6 @@ def create_manager(
             - alpha_A: float
             - l2_reg: float
             - ent_reg: float
-            - kl_reg: float
 
         """
         assert config.num_samples==num_samples
@@ -354,8 +351,6 @@ def main(
     data_dir: Path|str,
     store_dir: Path|str,
     subject: str,
-    num_samples: int = 1000,
-    num_macros: int = 10,
     choices: Path|str = 'hmp_spec_A10.yaml',
     num_iters: int = 50,
     num_works: int|None = None,
@@ -363,16 +358,22 @@ def main(
 ):
     data_dir, store_dir = Path(data_dir), Path(store_dir)
     block_ids = prepare_blocks(data_dir, subject)
+    with open(store_dir/choices, 'r') as f:
+        choices = yaml.safe_load(f)
+    assert len(choices['num_samples'])==1
+    num_samples = choices['num_samples'][0]
+    assert len(choices['num_macros'])==1
+    num_macros = choices['num_macros'][0]
+
+    configs = choices2configs(choices, num_works)
     manager = create_manager(
         data_dir, store_dir, subject, block_ids, num_samples, num_macros, patience,
     )
-    configs = choices2configs(store_dir/choices, num_works)
     manager.batch(
-        configs, num_iters, num_works,
-        process_kw={'pbar_kw.unit': 'iter'},
+        configs, num_iters, num_works, process_kw={'pbar_kw.unit': 'iter'},
     )
 
-''
+
 if __name__=='__main__':
     main(**from_cli().fill({
         'data_dir': DATA_DIR,
