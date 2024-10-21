@@ -268,8 +268,8 @@ def create_manager(
             lls_test.append((gammas[-1]-gammas[t_train]).item())
             c_train += t_train
             c_test += len(gammas)-t_train
-        ll_train = sum(ll_train)/c_train
-        ll_test = sum(ll_test)/c_test
+        ll_train = sum(lls_train)/c_train
+        ll_test = sum(lls_test)/c_test
         return tensor2array({
             'workspace': {k: ws[k] for k in [
                 'pis', 'As', 'lls', 'gammas', 'log_Zs', 'log_gammas', 'log_xis',
