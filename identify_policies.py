@@ -365,7 +365,7 @@ def main(
     assert len(choices['num_macros'])==1
     num_macros = choices['num_macros'][0]
 
-    configs = choices2configs(choices, num_works)
+    configs = choices2configs(choices)
     manager = create_manager(
         data_dir, store_dir, subject, block_ids, num_samples, num_macros, patience,
     )
