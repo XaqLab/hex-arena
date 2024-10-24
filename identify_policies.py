@@ -55,7 +55,7 @@ def collect_data(
 
 def init_hmp(
     model: SamplingBeliefModel,
-    z_dim: int, num_macros: int, num_policies: int,
+    z_dim: int, num_macros: int, num_policies: int, policy: dict,
     store_dir: Path, seed: int|None = None,
 ) -> HiddenMarkovPolicy:
     r"""Initializes a hidden Markov policy object.
@@ -80,7 +80,7 @@ def init_hmp(
     """
     hmp = HiddenMarkovPolicy(
         model.p_s, z_dim, num_macros, num_policies=num_policies,
-        ebd_k=model.ebd_k, ebd_b=model.ebd_b,
+        ebd_k=model.ebd_k, ebd_b=model.ebd_b, policy=policy,
     )
     if seed is not None:
         hmp.reset(seed)
@@ -203,6 +203,7 @@ def create_manager(
           - num_samples: int    # number of samples used in belief update
           - z_dim: int          # compressed belief dimension
           - num_policies: int   # number of candidate policies
+          - policy: dict        # MLP parameters of policy network
           - num_macros: int     # number of macro actions
           - reg_coefs:          # regularization coefficients, see `HiddenMarkovPolicy.m_step`
             - alpha_ii: float
@@ -214,7 +215,8 @@ def create_manager(
         assert config.num_samples==num_samples
         assert config.num_macros==num_macros
         hmp = init_hmp(
-            model, config.z_dim, config.num_macros, config.num_policies, store_dir, config.seed,
+            model, config.z_dim, config.num_macros, config.num_policies,
+            config.policy, store_dir, config.seed,
         )
         pis, As, lls = [], [], []
         gammas, log_Zs = [[] for _ in range(num_blocks)], []
@@ -367,6 +369,21 @@ def main(
     num_macros = choices['num_macros'][0]
 
     configs = choices2configs(choices)
+    print('{} configs generated.'.format(len(configs)))
+    for config in configs:
+        config.fill({
+            'split': 0.9, 'z_dim': 3,
+            'policy': {
+                'num_features': [],
+                'nonlinearity': 'Softplus',
+            },
+            'reg_coefs': {
+                'alpha_ii': 100.,
+                'alpha_ij': 10.,
+                'l2_reg': 1e-3,
+                'ent_reg': 1e-4,
+            },
+        })
     manager = create_manager(
         data_dir, store_dir, subject, block_ids, num_samples, num_macros, patience,
     )
