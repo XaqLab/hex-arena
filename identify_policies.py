@@ -128,7 +128,7 @@ def m_step(
     hmp: HiddenMarkovPolicy,
     knowns: list[Tensor], beliefs: list[Tensor], actions: list[Tensor],
     log_gammas: list[Tensor], log_xis: list[Tensor],
-    alpha_ii: float, alpha_ij: float, l2_reg: float, ent_reg: float,
+    alpha_A: float, off_ratio: float, l2_reg: float, ent_reg: float,
 ) -> dict:
     r"""Performs one maximization step.
 
@@ -140,7 +140,7 @@ def m_step(
         Sequential data, see `e_step` for more details.
     log_gammas, log_xis:
         Output of the expectation step, see `e_step` for more details.
-    alpha_ii, alpha_ij:
+    alpha_A, off_ratio:
         Dirichlet priors for estimating the transition matrix.
     l2_reg, ent_reg:
         Regularization coefficients used in policy learning, see
@@ -154,7 +154,7 @@ def m_step(
 
     """
     hmp.update_pi(log_gammas)
-    hmp.update_A(log_xis, alpha_ii, alpha_ij)
+    hmp.update_A(log_xis, alpha_A, off_ratio)
     stats = hmp.m_step(
         torch.cat(knowns), torch.cat(beliefs), torch.cat(actions), torch.cat(log_gammas),
         l2_reg=l2_reg, ent_reg=ent_reg,
@@ -206,8 +206,8 @@ def create_manager(
           - policy: dict        # MLP parameters of policy network
           - num_macros: int     # number of macro actions
           - reg_coefs:          # regularization coefficients, see `HiddenMarkovPolicy.m_step`
-            - alpha_ii: float
-            - alpha_ij: float
+            - alpha_A: float
+            - off_ratio: float
             - l2_reg: float
             - ent_reg: float
 
@@ -378,8 +378,8 @@ def main(
                 'nonlinearity': 'Softplus',
             },
             'reg_coefs': {
-                'alpha_ii': 100.,
-                'alpha_ij': 10.,
+                'alpha_A': 100.,
+                'off_ratio': 0.1,
                 'l2_reg': 1e-3,
                 'ent_reg': 1e-4,
             },
