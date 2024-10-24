@@ -261,16 +261,17 @@ def create_manager(
         knowns, beliefs, actions = ws['knowns'], ws['beliefs'], ws['actions']
         log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
         lls_train, lls_test = [], []
-        c_train, c_test = 0, 0
         for i in range(len(actions)):
             t_train = int(len(actions[i])*ws['config'].split)
-            gammas = torch.logsumexp(log_gammas[i].exp(), dim=1)
-            lls_train.append(gammas[t_train].item())
-            lls_test.append((gammas[-1]-gammas[t_train]).item())
-            c_train += t_train
-            c_test += len(gammas)-t_train
-        ll_train = sum(lls_train)/c_train
-        ll_test = sum(lls_test)/c_test
+            gammas = log_gammas[i].exp()
+            with torch.no_grad():
+                inputs = hmp.policy_inputs(knowns[i], beliefs[i])
+                _, logps = hmp.action_probs(inputs)
+                lls = (hmp.emission_probs(logps, actions[i])*gammas).sum(dim=1)
+                lls_train.append(lls[:t_train])
+                lls_test.append(lls[t_train:])
+        ll_train = torch.cat(lls_train).mean().item()
+        ll_test = torch.cat(lls_test).mean().item()
         return tensor2array({
             'workspace': {k: ws[k] for k in [
                 'pis', 'As', 'lls', 'gammas', 'log_Zs', 'log_gammas', 'log_xis',
