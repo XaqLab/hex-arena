@@ -267,9 +267,9 @@ def create_manager(
             t_train = int(len(actions[i])*ws['config'].split)
             gammas = log_gammas[i].exp()
             with torch.no_grad():
-                inputs = hmp.policy_inputs(knowns[i], beliefs[i])
+                inputs = hmp.policy_inputs(knowns[i].to(hmp.device), beliefs[i].to(hmp.device))
                 _, logps = hmp.action_probs(inputs)
-                lls = (hmp.emission_probs(logps, actions[i])*gammas).sum(dim=1)
+                lls = (hmp.emission_probs(logps, actions[i])*gammas).sum(dim=1).cpu()
                 lls_train.append(lls[:t_train])
                 lls_test.append(lls[t_train:])
         ll_train = torch.cat(lls_train).mean().item()
