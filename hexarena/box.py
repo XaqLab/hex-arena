@@ -322,6 +322,13 @@ class StationaryBox(PoissonBox):
         return "Box with tau: ({})".format(self.taus[0])
 
     @property
+    def tau(self) -> float:
+        return self.taus[0]
+    @tau.setter
+    def tau(self, val) -> float:
+        self.taus = np.full_like(self.taus, fill_value=val)
+
+    @property
     def spec(self) -> dict:
         spec = super().spec
         tau = float(spec.pop('taus')[0])
@@ -333,7 +340,7 @@ class StationaryBox(PoissonBox):
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='taus':
-            val = [self.taus[0]]
+            val = [self.tau]
             low = [0]
             high = [np.inf]
         else:
