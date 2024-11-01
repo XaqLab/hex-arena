@@ -24,6 +24,9 @@ class Monkey:
     look_price:
         Price of looking, in units of 1/deg. It will be multiplied by the
         turning angle after moving to get looking cost.
+    center_cost:
+        Cost for staying at the center. Stay cost of othe tiles decreases
+        linearly to 0 towards arena corner.
 
     """
 
@@ -33,6 +36,7 @@ class Monkey:
         turn_price: float = 0.001,
         move_price: float = 0.,
         look_price: float = 0.001,
+        center_cost: float = 0.1,
     ):
         if arena is None or isinstance(arena, dict):
             arena = Config(arena)
@@ -43,6 +47,7 @@ class Monkey:
         self.turn_price = turn_price
         self.move_price = move_price
         self.look_price = look_price
+        self.center_cost = center_cost
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
@@ -62,6 +67,7 @@ class Monkey:
             'turn_price': self.turn_price,
             'move_price': self.move_price,
             'look_price': self.look_price,
+            'center_cost': self.center_cost,
         }
 
     def reset(self, seed: int|None = None) -> None:
@@ -78,17 +84,17 @@ class Monkey:
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
-        param = [self.push_cost, self.turn_price, self.move_price, self.look_price]
+        param = [self.push_cost, self.turn_price, self.move_price, self.look_price, self.center_cost]
         return param
 
     def set_param(self, param) -> None:
         r"""Sets monkey parameters."""
-        self.push_cost, self.turn_price, self.move_price, self.look_price = param
+        self.push_cost, self.turn_price, self.move_price, self.look_price, self.center_cost = param
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
-        # param: (push_cost, turn_price, move_price, look_price)
-        param_low = [-np.inf, -np.inf, -np.inf, -np.inf]
-        param_high = [np.inf, np.inf, np.inf, np.inf]
+        # param: (push_cost, turn_price, move_price, look_price, center_cost)
+        param_low = [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf]
+        param_high = [np.inf, np.inf, np.inf, np.inf, np.inf]
         return param_low, param_high
 
     def get_state(self) -> MonkeyState:
@@ -257,6 +263,9 @@ class Monkey:
         phi = self._direction(self.gaze, self.pos) # new face direction
         if not(phi is None or theta is None):
             reward -= self.look_price*self._delta_deg(theta, phi)
+        # stay cost
+        d = (np.array(self.arena.anchors[move])**2).sum()**0.5
+        reward -= self.center_cost*(1-d)
         # push cost
         if push:
             reward -= self.push_cost

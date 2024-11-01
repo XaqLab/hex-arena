@@ -111,14 +111,15 @@ class ForagingEnv(Env):
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
-        param = []
+        param = [self.time_cost]
         for x in self._components():
             param += [*x.get_param()]
         return param
 
     def set_param(self, param: EnvParam) -> None:
         r"""Sets environment parameter."""
-        c = 0
+        self.time_cost, = param[:1]
+        c = 1
         for x in self._components():
             val = x.get_param()
             n = len(val)
@@ -128,7 +129,7 @@ class ForagingEnv(Env):
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
         r"""Returns lower and upper bound of environment parameters."""
-        param_low, param_high = [], []
+        param_low, param_high = [0], [np.inf]
         for x in self._components():
             low, high = x.param_bounds()
             param_low += [*low]
