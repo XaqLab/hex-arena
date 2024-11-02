@@ -38,6 +38,7 @@ spec:
               - key: kubernetes.io/hostname # Target label is gpu_mem_size
                 operator: NotIn # Key must have one of the following values
                 values:
+                - at-gencompute002
                 - at-compute006 # calcium imaging
                 - at-compute015 # light bead microscopy
       containers: # Container Level
@@ -59,4 +60,4 @@ spec:
         - name: store
           mountPath: /hex-arena/store
         command: ["/bin/bash"] # Entry point for the container
-        args: ["-c", "python -u train_agents.py subject=marco max_wait=10 num_works=40 choices='agents_spec.yaml'"] # sh commands to clone and run python script
+        args: ["-c", "python -u train_agents.py subject=marco max_wait=10 num_agents=40 choices='agents_spec.yaml'"] # sh commands to clone and run python script
