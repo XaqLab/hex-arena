@@ -72,7 +72,7 @@ def create_manager(
         num_updates = 100 # number of policy updates
 
         manager.algo.policy.set_training_mode(True)
-        with tqdm(total=num_updates*n_steps, unit='step', leave=False) as pbar:
+        with tqdm(total=num_updates, unit='update', leave=False) as pbar:
             pbar_cb = ProgressBarCallback(pbar, disp_freq=n_steps)
             manager.algo.learn(
                 total_timesteps=num_updates*n_steps, callback=pbar_cb,
