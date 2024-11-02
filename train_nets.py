@@ -55,7 +55,7 @@ def main(
 
     _, model = create_model(subject)
     for seed in tqdm(seeds, unit='seed'):
-        save_pth = store_dir/'{}_[seed{:02d}].pkl'.format(subject, seed)
+        save_pth = store_dir/'belief_nets/{}_[seed{:02d}].pkl'.format(subject, seed)
         meta = Config({
             'subject': subject, 'seed': seed,
             'block_ids': block_ids, 'num_samples': num_samples,
@@ -78,6 +78,7 @@ def main(
             observations, actions, beliefs, strict_init=True,
             update_kw=update_kw, init_kw=init_kw,
         )
+        os.makedirs(save_pth, exist_ok=True)
         with open(save_pth, 'wb') as f:
             pickle.dump({
                 'meta': meta.asdict(), 'state_dict': model.state_dict(),
