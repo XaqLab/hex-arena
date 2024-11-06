@@ -35,7 +35,8 @@ def create_manager(
     manager.env, manager.model = create_model(subject)
     manager.model.enable_info = False
     manager.model.keep_grad = False
-    n_steps = 2000 # number of steps per update
+    n_steps = 2000 # number of time steps per update
+    num_updates = 10 # number of policy updates per epoch
 
     def setup(config: Config) -> int:
         r"""
@@ -64,28 +65,35 @@ def create_manager(
         for box in manager.env.boxes:
             box.reward = config.reward
         manager.algo = PPO(
-            env=TimeLimit(manager.model, 1000), policy='MlpPolicy',
+            env=TimeLimit(manager.model, 1200), policy='MlpPolicy',
             n_steps=n_steps, batch_size=100,
             gamma=config.gamma, ent_coef=config.ent_coef,
         )
-        return 0
+        return float('inf')
     def reset():
-        num_updates = 100 # number of policy updates
-
+        manager.logs = []
+        manager.model.reset()
+    def step():
         manager.algo.policy.set_training_mode(True)
         with tqdm(total=num_updates, unit='update', leave=False) as pbar:
             pbar_cb = ProgressBarCallback(pbar, disp_freq=n_steps)
+            pbar_cb.logs = manager.logs
+            if len(manager.logs)>0:
+                pbar_cb.reward, pbar_cb.food = manager.logs[-1]
+            manager.algo.env.envs[0].needs_reset = False
             manager.algo.learn(
-                total_timesteps=num_updates*n_steps, callback=pbar_cb,
+                total_timesteps=num_updates*n_steps, callback=pbar_cb, reset_num_timesteps=False,
             )
         manager.algo.policy.set_training_mode(False)
-        manager.logs = pbar_cb.logs
-    def step():
-        ...
     def get_ckpt():
         ckpt = {
             'policy': tensor2array(manager.algo.policy.state_dict()),
             'logs': manager.logs,
+            'last_obs': manager.algo._last_obs,
+            'elapsed_steps': manager.algo.env.envs[0].env._elapsed_steps,
+            'env_state': manager.env.get_state(),
+            'known': manager.model.known,
+            'belief': tensor2array(manager.model.belief),
         }
         return ckpt
     def load_ckpt(ckpt) -> int:
@@ -93,7 +101,12 @@ def create_manager(
             array2tensor(ckpt['policy'], manager.algo.device),
         )
         manager.logs = ckpt['logs']
-        return 0
+        manager.algo._last_obs = ckpt['last_obs']
+        manager.algo.env.envs[0].env._elapsed_steps = ckpt['elapsed_steps']
+        manager.env.set_state(ckpt['env_state'])
+        manager.model.known = ckpt['known']
+        manager.model.belief = array2tensor(ckpt['belief'])
+        return len(manager.logs)//num_updates
 
     manager.setup = setup
     manager.reset = reset
