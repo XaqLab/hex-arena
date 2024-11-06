@@ -120,6 +120,7 @@ def main(
     subject: str,
     choices: Path|str = 'agents_spec.yaml',
     patience: float = 2.,
+    num_epochs: int = 10,
     num_agents: int|None = None,
 ):
     r"""Trains RL agents for different reward parameters.
@@ -155,7 +156,7 @@ def main(
         config.fill(default)
 
     manager = create_manager(store_dir, subject, patience)
-    manager.batch(configs, 0, num_agents)
+    manager.batch(configs, num_epochs, num_agents, pbar_kw={'unit': 'agent'})
 
 if __name__=='__main__':
     main(**from_cli().fill({
