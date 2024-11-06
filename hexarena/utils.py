@@ -326,7 +326,7 @@ class ProgressBarCallback(_ProgressBarCallback):
         food = np.mean([info['observation'][-1] for info in self.locals['infos']])
         self.reward = reward if self.reward is None else self.gamma*self.reward+(1-self.gamma)*reward
         self.food = food if self.food is None else self.gamma*self.food+(1-self.gamma)*food
-        if self.n_calls%self.disp_freq==0 or self.n_calls==self.pbar.total:
+        if self.n_calls%self.disp_freq==0:
             self.pbar.set_description(
                 "[Reward {:.2f}], [Food {:.2f}]".format(self.reward, self.food)
             )

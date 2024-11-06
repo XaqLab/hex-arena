@@ -35,6 +35,7 @@ def create_manager(
     manager.env, manager.model = create_model(subject)
     manager.model.enable_info = False
     manager.model.keep_grad = False
+    n_steps = 2000 # number of steps per update
 
     def setup(config: Config) -> int:
         r"""
@@ -64,11 +65,11 @@ def create_manager(
             box.reward = config.reward
         manager.algo = PPO(
             env=TimeLimit(manager.model, 1000), policy='MlpPolicy',
+            n_steps=n_steps, batch_size=100,
             gamma=config.gamma, ent_coef=config.ent_coef,
         )
         return 0
     def reset():
-        n_steps = 2000 # number of steps per update
         num_updates = 100 # number of policy updates
 
         manager.algo.policy.set_training_mode(True)
