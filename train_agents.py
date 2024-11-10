@@ -38,6 +38,14 @@ def create_manager(
     n_steps = 2000 # number of time steps per update
     num_updates = 10 # number of policy updates per epoch
 
+    manager.default = Config({'seed': 0, 'gamma': 0.99, 'ent_coef': 0.01})
+    sig = inspect.signature(ForagingEnv).parameters
+    manager.default.fill({k: sig[k].default for k in ['time_cost']})
+    sig = inspect.signature(Monkey).parameters
+    manager.default.fill({k: sig[k].default for k in ['push_cost', 'turn_price', 'move_price', 'look_price', 'center_cost']})
+    sig = inspect.signature(BaseFoodBox).parameters
+    manager.default.fill({k: sig[k].default for k in ['reward']})
+
     def setup(config: Config) -> int:
         r"""
         config:
@@ -143,19 +151,8 @@ def main(
     with open(store_dir/choices, 'r') as f:
         choices = yaml.safe_load(f)
 
-    default = Config({'seed': 0, 'gamma': 0.99, 'ent_coef': 0.01})
-    sig = inspect.signature(ForagingEnv).parameters
-    default.fill({k: sig[k].default for k in ['time_cost']})
-    sig = inspect.signature(Monkey).parameters
-    default.fill({k: sig[k].default for k in ['push_cost', 'turn_price', 'move_price', 'look_price', 'center_cost']})
-    sig = inspect.signature(BaseFoodBox).parameters
-    default.fill({k: sig[k].default for k in ['reward']})
-
-    configs = choices2configs(choices)
-    for config in configs:
-        config.fill(default)
-
     manager = create_manager(store_dir, subject, patience)
+    configs = choices2configs(choices)
     manager.batch(configs, num_epochs, num_agents, pbar_kw={'unit': 'agent'})
 
 if __name__=='__main__':
