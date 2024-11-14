@@ -187,14 +187,30 @@ def create_manager(
         hyperparameters.
 
     """
-    _, model = create_model(subject)
-    num_blocks = len(block_ids)
-    knowns, beliefs, actions = collect_data(
+    manager = Manager(store_dir=Path(store_dir)/'policies'/subject, patience=patience)
+    manager.env, manager.model = create_model(subject)
+    manager.num_blocks = len(block_ids)
+    manager.knowns, manager.beliefs, manager.actions = collect_data(
         data_dir, store_dir, subject, block_ids, num_samples, num_macros,
     )
-    ws = { # workspace
-        'knowns': knowns, 'beliefs': beliefs, 'actions': actions,
+    manager.default = {
+        'seed': 0, 'block_ids': block_ids,
+        'split': 0.9, # portion of training length of each block
+        'num_samples': num_samples, # number of samples in belief update
+        'z_dim': 3, # compressed belief dimension
+        'num_macros': num_macros, # number of macro actionds
+        'policy': { # MLP parameters of policy network
+            'num_features': [], # hidden layer sizes
+            'nonlinearity': 'Softplus',
+        },
+        'reg_coefs': {  # regularization coefficients, see `HiddenMarkovPolicy.m_step`
+            'alpha_A': 100.,
+            'off_ratio': 0.1,
+            'l2_reg': 1e-3,
+            'ent_reg': 1e-4,
+        },
     }
+
     def setup(config: Config):
         r"""
         config:
@@ -214,57 +230,49 @@ def create_manager(
         """
         assert config.num_samples==num_samples
         assert config.num_macros==num_macros
-        hmp = init_hmp(
-            model, config.z_dim, config.num_macros, config.num_policies,
+        manager.config = config
+        manager.hmp = init_hmp(
+            manager.model, config.z_dim, config.num_macros, config.num_policies,
             config.policy, store_dir, config.seed,
         )
-        pis, As, lls = [], [], []
-        gammas, log_Zs = [[] for _ in range(num_blocks)], []
-        ws.update({
-            'config': config, 'hmp': hmp, 'pis': pis, 'As': As, 'lls': lls,
-            'gammas': gammas, 'log_Zs': log_Zs,
-        })
+        manager.pis, manager.As, manager.lls = [], [], []
+        manager.gammas, manager.log_Zs = [[] for _ in range(manager.num_blocks)], []
         return float('inf') # no limit on EM iterations
-    def get_tensors(train: bool = True):
-        split = ws['config'].split
+    def get_tensors():
+        split = manager.config.split
         knowns, beliefs, actions = [], [], []
-        for i in range(num_blocks):
-            t_train = int(len(ws['actions'][i])*split)
-            if train:
-                knowns.append(ws['knowns'][i][:t_train])
-                beliefs.append(ws['beliefs'][i][:t_train])
-                actions.append(ws['actions'][i][:t_train])
-            else:
-                knowns.append(ws['knowns'][i][t_train:])
-                beliefs.append(ws['beliefs'][i][t_train:])
-                actions.append(ws['actions'][i][t_train:])
+        for i in range(manager.num_blocks):
+            t_train = int(len(manager.actions[i])*split)
+            knowns.append(manager.knowns[i][:t_train])
+            beliefs.append(manager.beliefs[i][:t_train])
+            actions.append(manager.actions[i][:t_train])
         return knowns, beliefs, actions
     def reset():
         knowns, beliefs, actions = get_tensors()
-        log_gammas, log_xis, _ = e_step(ws['hmp'], knowns, beliefs, actions)
-        ws.update({'log_gammas': log_gammas, 'log_xis': log_xis})
+        manager.log_gammas, manager.log_xis, _ = e_step(manager.hmp, knowns, beliefs, actions)
     def step():
         knowns, beliefs, actions = get_tensors()
-        hmp, reg_coefs = ws['hmp'], ws['config'].reg_coefs
+        hmp, reg_coefs = manager.hmp, manager.config.reg_coefs
         stats = m_step(
             hmp, knowns, beliefs, actions,
-            ws['log_gammas'], ws['log_xis'], **reg_coefs,
+            manager.log_gammas, manager.log_xis, **reg_coefs,
         )
-        ws['pis'].append(hmp.log_pi.exp())
-        ws['As'].append(hmp.log_A.exp())
-        ws['lls'].append(-stats['losses_val'][-1][0])
+        manager.pis.append(hmp.log_pi.exp())
+        manager.As.append(hmp.log_A.exp())
+        manager.lls.append(-stats['losses_val'][-1][0])
 
-        ws['log_gammas'], ws['log_xis'], log_Zs = e_step(hmp, knowns, beliefs, actions)
-        for i in range(num_blocks):
-            ws['gammas'][i].append(ws['log_gammas'][i].exp())
-        ws['log_Zs'].append(log_Zs)
+        manager.log_gammas, manager.log_xis, log_Zs = e_step(hmp, knowns, beliefs, actions)
+        for i in range(manager.num_blocks):
+            manager.gammas[i].append(manager.log_gammas[i].exp())
+        manager.log_Zs.append(log_Zs)
     def get_ckpt():
-        hmp = ws['hmp']
-        knowns, beliefs, actions = ws['knowns'], ws['beliefs'], ws['actions']
+        hmp = manager.hmp
+        knowns, beliefs, actions = manager.knowns, manager.beliefs, manager.actions
         log_gammas, _, _ = e_step(hmp, knowns, beliefs, actions)
-        lls_train, lls_test = [], []
+        log_gammas_test, lls_train, lls_test = [], [], []
         for i in range(len(actions)):
-            t_train = int(len(actions[i])*ws['config'].split)
+            t_train = int(len(actions[i])*manager.config.split)
+            log_gammas_test.append(log_gammas[i][t_train:])
             gammas = log_gammas[i].exp()
             with torch.no_grad():
                 inputs = hmp.policy_inputs(knowns[i].to(hmp.device), beliefs[i].to(hmp.device))
@@ -275,30 +283,28 @@ def create_manager(
         ll_train = torch.cat(lls_train).mean().item()
         ll_test = torch.cat(lls_test).mean().item()
         return tensor2array({
-            'workspace': {k: ws[k] for k in [
+            'workspace': {k: getattr(manager, k) for k in [
                 'pis', 'As', 'lls', 'gammas', 'log_Zs', 'log_gammas', 'log_xis',
             ]},
             'log_pi': hmp.log_pi, 'log_A': hmp.log_A,
             'policies': [policy.state_dict() for policy in hmp.policies],
-            'll_train': ll_train, 'll_test': ll_test,
+            'log_gammas': log_gammas_test, 'll_train': ll_train, 'll_test': ll_test,
         })
     def load_ckpt(ckpt):
-        ckpt = array2tensor(ckpt, model.device)
-        ws.update(ckpt['workspace'])
-        hmp = ws['hmp']
+        ckpt = array2tensor(ckpt, manager.model.device)
+        for k in ckpt['workspace']:
+            setattr(manager, k, ckpt['workspace'][k])
+        hmp = manager.hmp
         hmp.log_pi = ckpt['log_pi']
         hmp.log_A = ckpt['log_A']
         for i, policy in enumerate(hmp.policies):
             policy.load_state_dict(ckpt['policies'][i])
-        return len(ws['lls'])
-
-    manager = Manager(store_dir=Path(store_dir)/'policies'/subject, patience=patience)
+        return len(manager.lls)
     manager.setup = setup
     manager.reset = reset
     manager.step = step
     manager.get_ckpt = get_ckpt
     manager.load_ckpt = load_ckpt
-    manager.ws = ws
     return manager
 
 def fetch_results(
@@ -368,25 +374,11 @@ def main(
     assert len(choices['num_macros'])==1
     num_macros = choices['num_macros'][0]
 
-    configs = choices2configs(choices)
-    print('{} configs generated.'.format(len(configs)))
-    for config in configs:
-        config.fill({
-            'split': 0.9, 'z_dim': 3,
-            'policy': {
-                'num_features': [],
-                'nonlinearity': 'Softplus',
-            },
-            'reg_coefs': {
-                'alpha_A': 100.,
-                'off_ratio': 0.1,
-                'l2_reg': 1e-3,
-                'ent_reg': 1e-4,
-            },
-        })
     manager = create_manager(
         data_dir, store_dir, subject, block_ids, num_samples, num_macros, patience,
     )
+    configs = choices2configs(choices)
+    print('{} configs generated.'.format(len(configs)))
     manager.batch(
         configs, num_iters, num_works, process_kw={'pbar_kw.unit': 'iter'},
     )
