@@ -380,6 +380,50 @@ class ForagingEnv(Env):
 
         return observations, actions, rewards
 
+    def summarize_episodes(self,
+        observations: list[Sequence[Observation]],
+        actions: list[Sequence[int]],
+    ) -> tuple[Array, Array, Array, Array]:
+        r"""Summarizes multiple episodes.
+
+        Args
+        ----
+        observations:
+            Observations of all episodes. Each item is of length 'T+1'.
+        actions:
+            Actions of all episodes. Each item is of length 'T'.
+
+        Returns
+        -------
+        push_freq, food_freq: (num_boxes,)
+            Push frequency and food frequency of each box. Success rate can be
+            computed by `food_freq/push_freq`.
+        pos_hist, gaze_hist: (num_tiles,)
+            Position and gaze histogram.
+
+        """
+        assert len(observations)==len(actions), "Number of episodes inconsistent."
+        num_episodes = len(observations)
+        push_count = np.zeros(self.arena.num_boxes)
+        food_count = np.zeros(self.arena.num_boxes)
+        pos_hist = np.zeros(self.arena.num_tiles)
+        gaze_hist = np.zeros(self.arena.num_tiles)
+        for e_idx in range(num_episodes):
+            for t, action in enumerate(actions[e_idx]):
+                push, move, look = self.monkey.convert_action(action)
+                if push:
+                    b_idx = self.arena.boxes.index(move)
+                    push_count[b_idx] += 1
+                    food_count[b_idx] += observations[e_idx][t+1][-1]
+                pos_hist[move] += 1
+                gaze_hist[look] += 1
+        num_steps = sum(pos_hist)
+        push_freq = push_count/num_steps
+        food_freq = food_count/num_steps
+        pos_hist /= num_steps
+        gaze_hist /= num_steps
+        return push_freq, food_freq, pos_hist, gaze_hist
+
     def plot_arena(self,
         ax: Axes, pos: int, gaze: int, rewarded: bool|None,
         foods: Array|None, colors: Array|None, counts: Array|None,
