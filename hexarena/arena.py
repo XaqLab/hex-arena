@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
+from jarvis.config import Config
 
 from .alias import Array, Axes, Artist
 
@@ -167,7 +168,7 @@ class Arena:
         cmap: str = 'YlOrBr',
         vmin: float = 0,
         vmax: float|None = None,
-        clabel: str = '',
+        cbar_kw: dict|None = None,
         h_tiles: list[Artist]|None = None,
     ) -> list[Artist]:
         r"""Plots heat map over the arena.
@@ -192,6 +193,10 @@ class Arena:
             Handles of colored tiles.
 
         """
+        cbar_kw = Config(cbar_kw).fill({
+            'fraction': 0.1, 'shrink': 0.8, 'pad': 0.05,
+            'orientation': 'horizontal', 'location': 'top',
+        })
         vals = np.array(vals)
         assert len(vals)==self.num_tiles
         assert np.all(vals>=0)
@@ -205,9 +210,7 @@ class Arena:
             for i in range(self.num_tiles):
                 h_tiles.append(self.plot_tile(ax, i, cmap(norm(vals[i]))))
             plt.colorbar(
-                mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-                ax=ax, fraction=0.1, shrink=0.8, pad=0.05,
-                orientation='horizontal', label=clabel,
+                mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
             )
         else:
             assert len(h_tiles)==self.num_tiles
