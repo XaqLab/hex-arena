@@ -8,6 +8,7 @@ from irc.dist.embedder import BaseEmbedder
 from collections.abc import Sequence
 
 from .alias import Array, Tensor, BoxState, EnvParam
+from .color import get_cue_array
 
 
 class BaseFoodBox:
@@ -28,10 +29,9 @@ class BaseFoodBox:
         to represent a square matrix. For example, if `num_patches=16`, a 4*4
         grid of integers will be used to represent the color pattern on the
         screen.
-    sigma:
-        Parameter governing the noise of color cues, should be in (0, 0.5).
-        Color cues are drawn from a beta distribution of which the variance is
-        determined by sigma. See `render` for more details.
+    kappa:
+        Non-negative float for stimulus reliability, see `.color.get_cue_movie`
+        for more details.
 
     """
 
@@ -46,14 +46,14 @@ class BaseFoodBox:
         num_levels: int = 3,
         num_grades: int = 6,
         num_patches: int = 1,
-        sigma: float = 0.05,
+        kappa: float = 0.1,
     ):
         self.dt = dt
         self.reward = reward
         self.num_levels = num_levels
         self.num_grades = num_grades
         self.num_patches = num_patches
-        self.sigma = sigma
+        self.kappa = kappa
 
         self.mat_size = int(self.num_patches**0.5)
         assert self.mat_size**2==self.num_patches, (
@@ -64,7 +64,7 @@ class BaseFoodBox:
         self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
 
         self.rng = np.random.default_rng()
-        self.param_names = ['sigma']
+        self.param_names = ['kappa']
 
     def __repr__(self) -> str:
         return f"Box with {self.num_levels} levels and {self.num_grades} color grades"
@@ -76,7 +76,7 @@ class BaseFoodBox:
             'num_levels': self.num_levels,
             'num_grades': self.num_grades,
             'num_patches': self.num_patches,
-            'sigma': self.sigma,
+            'kappa': self.kappa,
         }
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
@@ -94,8 +94,8 @@ class BaseFoodBox:
             bounds of the parameter.
 
         """
-        if name=='sigma':
-            val, low, high = [self.sigma], [0], [0.5]
+        if name=='kappa':
+            val, low, high = [self.kappa], [0], [np.inf]
         return val, low, high
 
     def _set_param(self, name: str, val: EnvParam) -> None:
@@ -109,9 +109,9 @@ class BaseFoodBox:
             Parameter values.
 
         """
-        if name=='sigma':
+        if name=='kappa':
             assert len(val)==1
-            self.sigma = val[0]
+            self.kappa = val[0]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
@@ -155,27 +155,40 @@ class BaseFoodBox:
     def _set_colors(self, cue: float) -> None:
         r"""Sets color patches given cue.
 
+        A full array of approximate shape (128, 96) is generated, and value of
+        each patch is the circular mean of the corresponding part.
+
         Args
         ----
         cue:
-            A real number in (0, 1) that determines Beta distribution parameters
-            for each patch.
+            A real number in (0, 1) that determines the mean color (blue vs red)
+            of the cue array.
 
         """
-        rv = stats.beta(a=cue/self.sigma, b=(1-cue)/self.sigma)
-        self.colors = self.rng.choice(
-            self.num_grades, size=(self.mat_size, self.mat_size),
-            p=np.diff(rv.cdf(np.linspace(0, 1, self.num_grades+1))),
-        )
+        def circular_mean(vals: Array) -> float:
+            r"""Computes circular mean for values on a periodic boundary [0, 1)."""
+            xs = np.cos(2*np.pi*vals)
+            ys = np.sin(2*np.pi*vals)
+            theta = np.arctan2(ys.mean(), xs.mean())
+            val = np.mod(theta/(2*np.pi), 1)
+            return val
+        m = self.mat_size
+        size = ((128//m)*m, (96//m)*m)
+        values = get_cue_array(cue, size=size, kappa=self.kappa)
+        self.colors = np.empty((m, m), dtype=int)
+        for i in range(m):
+            for j in range(m):
+                value = circular_mean(values[i*m:(i+1)*m, j*m:(j+1)*m])
+                self.colors[i, j] = int(np.floor(value*self.num_grades))
 
     def render(self) -> None:
         r"""Renders color cues.
 
-        Colors are drawn from a discretized beta distribution, of which the mean
-        is determined by `level`.
+        The cue value is determined based on current box state, and the cue
+        array `self.colors` is updated.
 
         """
-        cue = (self.level+0.5)/self.num_levels
+        cue = self.level/(self.num_levels-1)
         self._set_colors(cue)
 
     def _reset(self) -> None:
@@ -572,7 +585,7 @@ class GammaLinearBox(BaseFoodBox):
         self.interval, self.timer = self._idx2sub(state[0])
 
     def render(self) -> None:
-        cue = (self.timer+0.5)/(self.interval+1) # color cue marks the progress towards reward
+        cue = self.timer/self.interval # color cue marks the progress towards reward
         self._set_colors(cue)
 
     def _reset(self) -> None:

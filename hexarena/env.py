@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from .arena import Arena
 from .monkey import Monkey
 from .box import BaseFoodBox
+from .color import get_cmap
 from .alias import EnvParam, Observation, State, Figure, Axes, Artist, Array
 
 class ForagingEnv(Env):
@@ -498,8 +499,8 @@ class ForagingEnv(Env):
                 )
                 h_foods.append(h_food)
                 h_box = ax.imshow(
-                    colors[i], extent=[x-s, x+s, y-s, y+s], cmap='RdYlBu_r',
-                    vmin=-1, vmax=box.num_grades, zorder=2,
+                    colors[i], extent=[x-s, x+s, y-s, y+s],
+                    vmin=0, vmax=box.num_grades-1, cmap=get_cmap(), zorder=2,
                 )
                 h_boxes.append(h_box)
                 h_count = ax.text(
