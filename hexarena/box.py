@@ -178,7 +178,7 @@ class BaseFoodBox:
         self.colors = np.empty((m, m), dtype=int)
         for i in range(m):
             for j in range(m):
-                value = circular_mean(values[i*m:(i+1)*m, j*m:(j+1)*m])
+                value = circular_mean(values[i*(size[0]//m):(i+1)*(size[0]//m), j*(size[1]//m):(j+1)*(size[1]//m)])
                 self.colors[i, j] = int(np.floor(value*self.num_grades))
 
     def render(self) -> None:
