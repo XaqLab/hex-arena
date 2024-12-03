@@ -289,13 +289,13 @@ class ForagingEnv(Env):
 
         # actual color movie is not saved, using independent cue array generated
         # at each time step instead
+        self.reset(seed=0) # remove stochasticity of box 'get_colors' method
         colors = []
         for i in range(num_steps+1):
             cues = np.clip(block_data['cues'][t>=(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
             colors.append([])
             for box, cue in zip(self.boxes, cues):
-                box._set_colors(cue)
-                colors[-1].append(box.colors)
+                colors[-1].append(box.get_colors(cue))
         colors = np.array(colors, dtype=float)
 
         env_data = {
@@ -330,6 +330,7 @@ class ForagingEnv(Env):
         """
         num_steps = env_data['num_steps']
 
+        self.reset(seed=0) # remove stochasticity of monkey 'look' method
         observations = np.empty((num_steps+1, len(self.observation_space.nvec)), dtype=int)
         for t in range(num_steps+1):
             for i in range(2):
@@ -345,7 +346,7 @@ class ForagingEnv(Env):
                     else:
                         observations[t, i] = vals[(vals>=0).nonzero()[0].min()] # first valid frame
             i = 2
-            for b_idx, box in enumerate(self.boxes): # TODO update with true pattern
+            for b_idx, box in enumerate(self.boxes):
                 if observations[t, 1]==self.arena.boxes[b_idx]:
                     color = self.monkey.look(env_data['colors'][t, b_idx])
                 else:

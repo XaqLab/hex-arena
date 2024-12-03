@@ -137,11 +137,8 @@ class BaseFoodBox:
         self.food = bool(state[0])
         self.level = state[1]
 
-    def _set_colors(self, cue: float) -> None:
-        r"""Sets color patches given cue.
-
-        A full array of approximate shape (128, 96) is generated, and value of
-        each patch is the circular mean of the corresponding part.
+    def get_colors(self, cue: float) -> Array:
+        r"""Returns the color cue array.
 
         Args
         ----
@@ -149,8 +146,14 @@ class BaseFoodBox:
             A real number in (0, 1) that determines the mean color (blue vs red)
             of the cue array.
 
+        Returns
+        -------
+        colors: (height, width)
+            2D float array with values on a periodic range [0, 1).
+
         """
-        self.colors = get_cue_array(cue, size=self.resol, kappa=self.kappa)
+        colors = get_cue_array(cue, size=self.resol, kappa=self.kappa, rng=self.rng)
+        return colors
 
     def render(self) -> None:
         r"""Renders color cues.
@@ -160,7 +163,7 @@ class BaseFoodBox:
 
         """
         cue = self.level/(self.num_levels-1)
-        self._set_colors(cue)
+        self.colors = self.get_colors(cue)
 
     def _reset(self) -> None:
         raise NotImplementedError
@@ -557,7 +560,7 @@ class GammaLinearBox(BaseFoodBox):
 
     def render(self) -> None:
         cue = self.timer/self.interval # color cue marks the progress towards reward
-        self._set_colors(cue)
+        self.colors = self.get_colors(cue)
 
     def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""
