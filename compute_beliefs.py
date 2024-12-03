@@ -130,12 +130,15 @@ def create_manager(
     manager.env, manager.model = create_model(subject, kappa)
     manager.model.use_sample = True
     manager.default = {
+        'subject': subject, 'kappa': kappa,
         'num_samples': 1000,
     }
 
     def setup(config: Config):
         r"""
         config:
+          - subject: str
+          - kappa: float
           - session_id: str
           - block_idx: int
           - num_samples: int
