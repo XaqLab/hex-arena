@@ -1,19 +1,18 @@
-import os, torch
+import os
 from pathlib import Path
 import numpy as np
 from jarvis.config import from_cli, Config
+from jarvis.utils import tensor2array, array2tensor
 from jarvis.manager import Manager
 from irc.model import SamplingBeliefModel
 
+from hexarena import DATA_DIR, STORE_DIR
 from hexarena.env import SimilarBoxForagingEnv
 from hexarena.alias import Array
 from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 
 
-DATA_DIR = Path(__file__).parent/'data'
-STORE_DIR = Path(__file__).parent/'store'
-
-def prepare_blocks(data_dir: Path, subject: str) -> list[tuple[str, int]]:
+def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str, int]]:
     r"""Prepares blocks to process.
 
     Args
@@ -22,6 +21,8 @@ def prepare_blocks(data_dir: Path, subject: str) -> list[tuple[str, int]]:
         Directory that contains experiment data file, e.g. 'data_marco.mat'.
     subject:
         Subject name.
+    kappa:
+        Cue reliability parameter.
 
     Returns
     -------
@@ -40,25 +41,25 @@ def prepare_blocks(data_dir: Path, subject: str) -> list[tuple[str, int]]:
     for session_id in block_infos:
         for block_idx in block_infos[session_id]:
             block_data = load_monkey_data(data_path, session_id, block_idx)
-            to_process = False
-            if subject=='marco':
-                if np.all(block_data['kappas']==0.01) and set(block_data['taus'])==set([15., 21., 35.]):
-                    to_process = True
-            if subject=='viktor':
-                if np.all(block_data['kappas']==0.) and set(block_data['taus'])==set([7., 14., 21.]):
-                    to_process = True
+            to_process = np.all(block_data['kappas']==kappa)
+            if subject=='marco' and set(block_data['taus'])!=set([15., 21., 35.]):
+                to_process = False
+            if subject=='viktor' and set(block_data['taus'])!=set([7., 14., 21.]):
+                to_process = False
             if to_process:
                 block_ids.append((session_id, block_idx))
     print(f'{len(block_ids)} valid blocks found.')
     return block_ids
 
-def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
+def create_model(subject: str, kappa: float) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
     r"""Creates default belief model.
 
     Args
     ----
     subject:
         Subject name, only 'marco' and 'viktor' are supported now.
+    kappa:
+        Cue reliability parameter.
 
     Returns
     -------
@@ -73,8 +74,7 @@ def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefMod
     if subject=='marco':
         env = SimilarBoxForagingEnv(
             box={
-                '_target_': 'hexarena.box.StationaryBox',
-                'num_patches': 1, 'num_levels': 10, 'num_grades': 8,
+                '_target_': 'hexarena.box.StationaryBox', 'kappa': kappa, 'num_levels': 10,
             },
             boxes=[{'tau': tau} for tau in [35, 21, 15]],
         )
@@ -84,8 +84,7 @@ def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefMod
     if subject=='viktor':
         env = SimilarBoxForagingEnv(
             box={
-                '_target_': 'hexarena.box.GammaLinearBox',
-                'num_patches': 1, 'max_interval': 40,
+                '_target_': 'hexarena.box.GammaLinearBox', 'kappa': kappa, 'max_interval': 40,
             },
             boxes=[{'tau': tau} for tau in [21, 14, 7]],
         )
@@ -99,7 +98,7 @@ def create_model(subject: str) -> tuple[SimilarBoxForagingEnv, SamplingBeliefMod
     return env, model
 
 def create_manager(
-    data_dir: Path, store_dir: Path, subject: str,
+    data_dir: Path, store_dir: Path, subject: str, kappa: float,
     save_interval: int = 10, patience: float = 12.,
 ) -> Manager:
     r"""Creates a manager to handle batch processing.
@@ -108,8 +107,10 @@ def create_manager(
     ----
     data_dir, store_dir:
         Directory of data and storage respectively.
-    subject_dir:
+    subject:
         Subject name.
+    kappa:
+        Cue reliability parameter.
     save_interval, patience:
         Arguments of the manager object, see `jarvis.manager.Manager` for more
         details.
@@ -121,10 +122,17 @@ def create_manager(
         processing and resuming from checkpoint are supported.
 
     """
-    data_path = data_dir/f'data_{subject}.mat'
-    env, model = create_model(subject)
-    model.use_sample = True
-    workspace = {}
+    manager = Manager(
+        store_dir=Path(store_dir)/'beliefs'/subject,
+        save_interval=save_interval, patience=patience,
+    )
+    manager.data_path = data_dir/f'data_{subject}.mat'
+    manager.env, manager.model = create_model(subject, kappa)
+    manager.model.use_sample = True
+    manager.default = {
+        'num_samples': 1000,
+    }
+
     def setup(config: Config):
         r"""
         config:
@@ -133,49 +141,38 @@ def create_manager(
           - num_samples: int
 
         """
-        session_id, block_idx = config.session_id, config.block_idx
-        block_data = load_monkey_data(data_path, session_id, block_idx)
+        block_data = load_monkey_data(manager.data_path, config.session_id, config.block_idx)
         block_data = align_monkey_data(block_data)
-        env_data = env.convert_experiment_data(block_data)
-        observations, actions, _ = env.extract_observation_action_reward(env_data)
-        workspace['observations'] = observations
-        workspace['actions'] = actions
-        model.num_samples = config.num_samples
-        return len(actions)
+        env_data = manager.env.convert_experiment_data(block_data)
+        manager.observations, manager.actions, _ = \
+            manager.env.extract_observation_action_reward(env_data)
+        manager.model.num_samples = config.num_samples
+        return len(manager.actions)
     def reset():
-        observations = workspace['observations']
-        known, belief, info = model.init_belief(observations[0])
-        workspace.update({
-            'knowns': [known], 'beliefs': [belief], 'infos': [info],
-        })
+        observations = manager.observations
+        known, belief, _ = manager.model.init_belief(observations[0])
+        manager.knowns = [known]
+        manager.beliefs = [belief]
     def step():
-        t = len(workspace['knowns'])-1
-        known, belief, info = model.update_belief(
-            workspace['knowns'][t], workspace['beliefs'][t],
-            workspace['actions'][t], workspace['observations'][t+1],
+        t = len(manager.knowns)-1
+        known, belief, _ = manager.model.update_belief(
+            manager.knowns[t], manager.beliefs[t],
+            manager.actions[t], manager.observations[t+1],
         )
-        workspace['knowns'].append(known)
-        workspace['beliefs'].append(belief)
-        workspace['infos'].append(info)
+        manager.knowns.append(known)
+        manager.beliefs.append(belief)
     def get_ckpt():
-        return {
-            'observations': workspace['observations'], 'actions': workspace['actions'],
-            'knowns': workspace['knowns'], 'infos': workspace['infos'],
-            'beliefs': [b.data.cpu().numpy() for b in workspace['beliefs']],
-        }
-    def load_ckpt(ckpt):
-        workspace.update({
-            'knowns': ckpt['knowns'], 'infos': ckpt['infos'],
-            'beliefs': [torch.tensor(b, device=model.device) for b in ckpt['beliefs']],
+        return tensor2array({
+            'knowns': manager.knowns,
+            'beliefs': manager.beliefs,
         })
-        return len(workspace['knowns'])-1
+    def load_ckpt(ckpt):
+        ckpt = array2tensor(ckpt, manager.model.device)
+        manager.knowns = ckpt['knowns']
+        manager.beliefs = ckpt['beliefs']
+        return len(manager.knowns)-1
     def pbar_desc(config):
         return f'{config.session_id}-B{config.block_idx}'
-
-    manager = Manager(
-        store_dir=Path(store_dir)/'beliefs'/subject,
-        save_interval=save_interval, patience=patience,
-    )
     manager.setup = setup
     manager.reset = reset
     manager.step = step
@@ -216,22 +213,22 @@ def fetch_beliefs(
 def main(
     data_dir: Path|str,
     store_dir: Path|str,
-    subject: str,
-    num_samples: int,
+    subject: str, kappa: float,
+    num_samples: int = 1000,
     num_works: int|None = None,
     save_interval: int = 10,
     patience: float = 12.,
 ):
     data_dir, store_dir = Path(data_dir), Path(store_dir)
-    block_ids = prepare_blocks(data_dir, subject)
+    block_ids = prepare_blocks(data_dir, subject, kappa)
     manager = create_manager(
-        data_dir, store_dir, subject, save_interval, patience,
+        data_dir, store_dir, subject, kappa, save_interval, patience,
     )
-    configs = [{
+    configs = [Config({
         'session_id': session_id,
         'block_idx': block_idx,
         'num_samples': num_samples,
-    } for session_id, block_idx in block_ids]
+    }) for session_id, block_idx in block_ids]
     np.random.default_rng().shuffle(configs)
     manager.batch(
         configs, num_works=num_works, pbar_kw={'unit': 'block', 'leave': True},
@@ -243,5 +240,5 @@ if __name__=='__main__':
         'data_dir': DATA_DIR,
         'store_dir': STORE_DIR,
         'subject': 'marco',
-        'num_samples': 1000,
+        'kappa': 0.1,
     }))
