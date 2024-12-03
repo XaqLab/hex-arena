@@ -228,11 +228,11 @@ class ForagingEnv(Env):
             - `gaze`: (num_steps+1,) int array. Gaze position.
             - `push`: (num_steps,) bool array. Whether the button is pushed.
             - `success`: (num_steps,) bool array. Whether the food is obtained.
-            - `box`: (num_steps,) int array. Box index of the push, -1 if no
+            - `box_idx`: (num_steps,) int array. Box index of the push, -1 if no
                 push is made.
             - `counts`: (num_steps+1, num_boxes, 2) int array. Push and success
                 counts for each box.
-            - `colors`: (num_steps+1, num_boxes, mat_size, mat_size) int array.
+            - `colors`: (num_steps+1, num_boxes, height, width) float array.
                 Colors on the food boxes.
 
         """
@@ -256,7 +256,7 @@ class ForagingEnv(Env):
         gaze = get_trajectory(block_data['gaze_xyz'])
 
         push_t, push_idx = block_data['push_t'], block_data['push_idx']
-        push, success, box, t_wait = [], [], [], [np.zeros(self.num_boxes)]
+        push, success, box_idx, t_wait = [], [], [], [np.zeros(self.num_boxes)]
         for i in range(1, num_steps+1): # one step fewer than pos and gaze
             t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
             pushes = push_idx[t_idxs]
@@ -269,39 +269,39 @@ class ForagingEnv(Env):
             t_wait.append(t_wait[-1]+1)
             if len(pushes)>0:
                 b_idx = pushes[-1]
-                box.append(b_idx)
+                box_idx.append(b_idx)
                 pos[i] = self.arena.boxes[b_idx] # set monkey position
                 t_wait[-1][b_idx] = 0
             else:
-                box.append(-1)
+                box_idx.append(-1)
         push = np.array(push, dtype=bool)
         success = np.array(success, dtype=bool)
-        box = np.array(box, dtype=int)
+        box_idx = np.array(box_idx, dtype=int)
         t_wait = np.stack(t_wait).astype(int)
         counts = np.stack([
             np.cumsum(
-                np.stack([success, push], axis=1)*(box==b_idx)[:, None], axis=0,
+                np.stack([success, push], axis=1)*(box_idx==b_idx)[:, None], axis=0,
             ) for b_idx in range(self.num_boxes)
         ], axis=1)
         counts = np.concatenate([
             np.zeros((1, *counts.shape[1:])), counts,
         ], axis=0).astype(int)
 
-        # actual colors are not provided in the raw data, will use a uniform
-        # patch estimated from the cumulative cue
-        # TODO update with true pattern
+        # actual color movie is not saved, using independent cue array generated
+        # at each time step instead
         colors = []
-        mat_size = self.boxes[0].mat_size
         for i in range(num_steps+1):
-            _cues = np.clip(block_data['cues'][t>=(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
-            _cues = np.floor(_cues*np.array([box.num_grades for box in self.boxes]))
-            colors.append(np.tile(_cues[:, None, None], (1, mat_size, mat_size)))
-        colors = np.array(colors, dtype=int)
+            cues = np.clip(block_data['cues'][t>=(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
+            colors.append([])
+            for box, cue in zip(self.boxes, cues):
+                box._set_colors(cue)
+                colors[-1].append(box.colors)
+        colors = np.array(colors, dtype=float)
 
         env_data = {
             'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
-            'push': push, 'success': success, 'box': box, 't_wait': t_wait, 'counts': counts,
-            'colors': colors,
+            'push': push, 'success': success, 'box_idx': box_idx,
+            't_wait': t_wait, 'counts': counts, 'colors': colors,
         }
         return env_data
 
@@ -347,18 +347,17 @@ class ForagingEnv(Env):
             i = 2
             for b_idx, box in enumerate(self.boxes): # TODO update with true pattern
                 if observations[t, 1]==self.arena.boxes[b_idx]:
-                    colors = env_data['colors'][t, b_idx].reshape(-1)
+                    color = self.monkey.look(env_data['colors'][t, b_idx])
                 else:
-                    colors = box.num_grades
-                observations[t, i:(i+box.num_patches)] = colors
-                i += box.num_patches
-            i = 5
+                    color = self.monkey.num_grades
+                observations[t, i+b_idx] = color
+            i += self.num_boxes
             observations[t, i] = int(t>0 and env_data['success'][t-1])
 
         actions = np.empty((num_steps,), dtype=int)
         for t in range(num_steps):
             if env_data['push'][t]:
-                pos = self.arena.boxes[env_data['box'][t]]
+                pos = self.arena.boxes[env_data['box_idx'][t]]
             else:
                 pos = observations[t+1, 0]
             actions[t] = self.monkey.index_action(
