@@ -69,7 +69,6 @@ class ForagingEnv(Env):
             box.dt = self.dt
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
-        assert len(np.unique([box.mat_size for box in self.boxes]))==1, "Color matrix sizes do not match."
 
         # state: (*monkey_state, *boxes_state)
         self._state_dims, nvec = (), ()
@@ -78,10 +77,9 @@ class ForagingEnv(Env):
             self._state_dims += (len(_nvec),)
             nvec += (*_nvec,)
         self.state_space = MultiDiscrete(nvec)
-        # observation: (*monkey_state, *boxes_colors, rewarded)
+        # observation: (*monkey_state, *seen_colors, rewarded)
         nvec = (*self.monkey.state_space.nvec,)
-        for box in self.boxes:
-            nvec += (box.num_grades+1,)*box.num_patches # additional grade for "not looked at"
+        nvec += (self.monkey.num_grades+1,)*self.num_boxes
         nvec += (2,)
         self.observation_space = MultiDiscrete(nvec)
         # action: (push, move, look)
@@ -185,16 +183,16 @@ class ForagingEnv(Env):
 
         The monkey has full knowledge of its own state, and only the box where
         the gaze is at gives valid color cues. Colors of other boxes are set to
-        a constant `box.num_patches` to represent 'UNKNOWN'.
+        a constant `monkey.num_patches` to represent 'UNKNOWN'.
 
         """
         observation = (*self.monkey.get_state(),)
         for box in self.boxes:
             if self.monkey.gaze==box.pos:
-                colors = box.colors.reshape(-1)
+                color = self.monkey.look(box.colors)
             else:
-                colors = np.full((box.num_patches,), fill_value=box.num_grades, dtype=int)
-            observation += (*colors,)
+                color = self.monkey.num_grades
+            observation += (color,)
         observation += (int(rewarded),)
         return observation
 
@@ -291,6 +289,7 @@ class ForagingEnv(Env):
 
         # actual colors are not provided in the raw data, will use a uniform
         # patch estimated from the cumulative cue
+        # TODO update with true pattern
         colors = []
         mat_size = self.boxes[0].mat_size
         for i in range(num_steps+1):
@@ -346,7 +345,7 @@ class ForagingEnv(Env):
                     else:
                         observations[t, i] = vals[(vals>=0).nonzero()[0].min()] # first valid frame
             i = 2
-            for b_idx, box in enumerate(self.boxes):
+            for b_idx, box in enumerate(self.boxes): # TODO update with true pattern
                 if observations[t, 1]==self.arena.boxes[b_idx]:
                     colors = env_data['colors'][t, b_idx].reshape(-1)
                 else:
@@ -448,8 +447,8 @@ class ForagingEnv(Env):
         foods: (num_boxes,)
             Bool array of food status in each box. If provided, red or blue bars
             will be plotted.
-        colors: (num_boxes, mat_size, mat_size)
-            Int array of color cues of each box.
+        colors: (num_boxes, height, width)
+            Float array of color cues of each box, in [0, 1).
         counts: (num_boxes, 2)
             Push counts since the beginning of the episode. Two numbers in each
             row are counts of successful pushes and total pushes.
@@ -499,8 +498,8 @@ class ForagingEnv(Env):
                 )
                 h_foods.append(h_food)
                 h_box = ax.imshow(
-                    colors[i], extent=[x-s, x+s, y-s, y+s],
-                    vmin=0, vmax=box.num_grades-1, cmap=get_cmap(), zorder=2,
+                    colors[i], extent=[x-s, x+s, y-s, y+s], zorder=2,
+                    vmin=0, vmax=1, cmap=get_cmap(), interpolation='nearest',
                 )
                 h_boxes.append(h_box)
                 h_count = ax.text(
@@ -597,7 +596,7 @@ class ForagingEnv(Env):
             Whether the agent is rewarded, ``None`` stands for no push.
         foods: bool, (num_steps+1, num_boxes)
             Food status for all boxes.
-        colors: int, (num_steps+1, num_boxes, mat_size, mat_size)
+        colors: float, (num_steps+1, num_boxes, height, width)
             Color cues of all boxes, regardless of the monkey gaze.
         counts: int, (num_steps+1, num_boxes, 2)
             Push counts since the beginning of the episode.

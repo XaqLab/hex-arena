@@ -4,7 +4,7 @@ from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
 from .arena import Arena
-from .alias import EnvParam, MonkeyState
+from .alias import EnvParam, MonkeyState, Array
 
 class Monkey:
     r"""Class for the monkey in an arena.
@@ -13,6 +13,12 @@ class Monkey:
     ----
     arena:
         The arena in which the monkey plays in.
+    num_grades:
+        Number of distinct colors the agent perceives.
+    integrate_area:
+        A number in (0, 1] specifying the size of visual field for integrating
+        color cues. For example `integrate_area=0.5` means a random patch of
+        size 0.5x0.5 on the monitor is integrated to get the mean color.
     push_cost:
         Cost of pushing the button to open the food box.
     turn_price:
@@ -32,6 +38,8 @@ class Monkey:
 
     def __init__(self,
         arena: Arena|dict|None = None,
+        num_grades: int = 8,
+        integrate_area: float = 0.5,
         push_cost: float = 1.,
         turn_price: float = 0.001,
         move_price: float = 0.,
@@ -43,6 +51,8 @@ class Monkey:
             arena._target_ = 'hexarena.arena.Arena'
             arena = arena.instantiate()
         self.arena: Arena = arena
+        self.num_grades = num_grades
+        self.integrate_area = integrate_area
         self.push_cost = push_cost
         self.turn_price = turn_price
         self.move_price = move_price
@@ -63,6 +73,8 @@ class Monkey:
     def spec(self) -> dict:
         return {
             '_target_': 'hexarena.monkey.Monkey',
+            'num_grades': self.num_grades,
+            'integrate_area': self.integrate_area,
             'push_cost': self.push_cost,
             'turn_price': self.turn_price,
             'move_price': self.move_price,
@@ -270,3 +282,29 @@ class Monkey:
         if push:
             reward -= self.push_cost
         return reward
+
+    def look(self, colors: Array) -> int:
+        r"""Returns the observation when looking at a color cue array.
+
+        Args
+        ----
+        colors: (height, width)
+            The color cue array with values in a periodic range [0, 1).
+
+        Returns
+        -------
+        observation:
+            An integer in [0, num_grades), indicating the circular mean color on
+            a random patch.
+
+        """
+        H, W = colors.shape
+        h = int(np.ceil(self.integrate_area*H))
+        w = int(np.ceil(self.integrate_area*W))
+        i = self.rng.choice(H-h)
+        j = self.rng.choice(W-h)
+        vals = colors[i:i+h, j:j+w]
+        xs, ys = np.cos(2*np.pi*vals), np.sin(2*np.pi*vals)
+        val = np.mod(np.arctan2(ys.mean(), xs.mean())/(2*np.pi), 1)
+        observation = int(np.floor(val*self.num_grades))
+        return observation

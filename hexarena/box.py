@@ -22,46 +22,33 @@ class BaseFoodBox:
         Reward value of food, not considered as a parameter.
     num_levels:
         Number of box quality levels.
-    num_grades:
-        Number of distinct colors on a color map for discrete values of `colors`.
-    num_patches:
-        Number of colored patches on the screen, must be a square of an integer
-        to represent a square matrix. For example, if `num_patches=16`, a 4*4
-        grid of integers will be used to represent the color pattern on the
-        screen.
     kappa:
         Non-negative float for stimulus reliability, see `.color.get_cue_movie`
         for more details.
+    resol:
+        Color cue array resolution, `(height, width)`.
 
     """
 
     food: bool # food availability
     level: int # a number in [0, num_levels)
-    colors: Array # a 2D int array of shape (mat_size, mat_size)
+    colors: Array # a 2D float array of shape (height, width)
 
     def __init__(self,
         *,
         dt: float = 1.,
         reward: float = 10.,
         num_levels: int = 3,
-        num_grades: int = 6,
-        num_patches: int = 1,
         kappa: float = 0.1,
+        resol: tuple[int, int] = (128, 128),
     ):
         self.dt = dt
         self.reward = reward
         self.num_levels = num_levels
-        self.num_grades = num_grades
-        self.num_patches = num_patches
         self.kappa = kappa
-
-        self.mat_size = int(self.num_patches**0.5)
-        assert self.mat_size**2==self.num_patches, (
-            f"`num_patches` ({self.num_patches}) must be a squre of an integer."
-        )
+        self.resol = resol
 
         self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
-        self.observation_space = MultiDiscrete([self.num_grades]*self.num_patches)
 
         self.rng = np.random.default_rng()
         self.param_names = ['kappa']
@@ -74,9 +61,7 @@ class BaseFoodBox:
         return {
             'dt': self.dt, 'reward': self.reward,
             'num_levels': self.num_levels,
-            'num_grades': self.num_grades,
-            'num_patches': self.num_patches,
-            'kappa': self.kappa,
+            'kappa': self.kappa, 'resol': self.resol,
         }
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
@@ -165,21 +150,7 @@ class BaseFoodBox:
             of the cue array.
 
         """
-        def circular_mean(vals: Array) -> float:
-            r"""Computes circular mean for values on a periodic boundary [0, 1)."""
-            xs = np.cos(2*np.pi*vals)
-            ys = np.sin(2*np.pi*vals)
-            theta = np.arctan2(ys.mean(), xs.mean())
-            val = np.mod(theta/(2*np.pi), 1)
-            return val
-        m = self.mat_size
-        size = ((128//m)*m, (96//m)*m)
-        values = get_cue_array(cue, size=size, kappa=self.kappa)
-        self.colors = np.empty((m, m), dtype=int)
-        for i in range(m):
-            for j in range(m):
-                value = circular_mean(values[i*(size[0]//m):(i+1)*(size[0]//m), j*(size[1]//m):(j+1)*(size[1]//m)])
-                self.colors[i, j] = int(np.floor(value*self.num_grades))
+        self.colors = get_cue_array(cue, size=self.resol, kappa=self.kappa)
 
     def render(self) -> None:
         r"""Renders color cues.
