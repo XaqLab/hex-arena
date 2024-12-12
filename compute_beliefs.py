@@ -51,7 +51,11 @@ def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str
     print(f'{len(block_ids)} valid blocks found.')
     return block_ids
 
-def create_model(subject: str, kappa: float) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
+def create_model(
+    subject: str, kappa: float,
+    env_kw: dict|None = None,
+    model_kw: dict|None = None,
+) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
     r"""Creates default belief model.
 
     Args
@@ -60,6 +64,8 @@ def create_model(subject: str, kappa: float) -> tuple[SimilarBoxForagingEnv, Sam
         Subject name, only 'marco' and 'viktor' are supported now.
     kappa:
         Cue reliability parameter.
+    env_kw:
+        Keyword arguments of the environment.
 
     Returns
     -------
@@ -72,29 +78,33 @@ def create_model(subject: str, kappa: float) -> tuple[SimilarBoxForagingEnv, Sam
 
     """
     if subject=='marco':
-        env = SimilarBoxForagingEnv(
-            box={
-                '_target_': 'hexarena.box.StationaryBox', 'kappa': kappa, 'num_levels': 10,
+        env_kw = Config(env_kw).fill({
+            'box': {
+                '_target_': 'hexarena.box.StationaryBox',
+                'num_levels': 10,
             },
-            boxes=[{'tau': tau} for tau in [35, 21, 15]],
-        )
-        model = SamplingBeliefModel(env,
-            s_idcs=[[0], [1], [2, 3], [4, 5], [6, 7]],
-        )
+            'boxes': [{'tau': tau} for tau in [35, 21, 15]],
+        })
+        model_kw = Config(model_kw).fill({
+            's_idcs': [[0], [1], [2, 3], [4, 5], [6, 7]],
+        })
     if subject=='viktor':
-        env = SimilarBoxForagingEnv(
-            box={
-                '_target_': 'hexarena.box.GammaLinearBox', 'kappa': kappa, 'max_interval': 40,
+        env_kw = Config(env_kw).fill({
+            'box': {
+                '_target_': 'hexarena.box.GammaLinearBox',
+                'max_interval': 40,
             },
-            boxes=[{'tau': tau} for tau in [21, 14, 7]],
-        )
-        phi = {
-            'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
-            'mlp_features': [16, 8],
-        }
-        model = SamplingBeliefModel(
-            env, p_s={'phis': [phi]*3},
-        )
+            'boxes': [{'tau': tau} for tau in [21, 14, 7]],
+        })
+        model_kw = Config(model_kw).fill({
+            'p_s.phis': [{
+                'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
+                'mlp_features': [16, 8],
+            }]*3,
+        })
+    env_kw.update({'box.kappa': kappa})
+    env = SimilarBoxForagingEnv(**env_kw)
+    model = SamplingBeliefModel(env, **model_kw)
     return env, model
 
 def create_manager(
