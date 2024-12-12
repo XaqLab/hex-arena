@@ -115,7 +115,7 @@ class Arena:
                         for l in range(-1 if k==0 else 0, 3):
                             append_seg(x, y, theta+l*np.pi/3)
         for segment in segments:
-            ax.plot(segment[0], segment[1], color='green', linestyle='--', linewidth=1)
+            ax.plot(segment[0], segment[1], color='ivory', linestyle='--', linewidth=0.5)
 
         ax.set_xlim([-1.1, 1.1])
         ax.set_ylim([-1.1, 1.1])
@@ -124,7 +124,7 @@ class Arena:
 
     def plot_tile(self,
         ax: Axes,
-        tile_idx: int, color = 'none', size = 1,
+        tile_idx: int, color = 'none', size = 2/3**0.5,
         h_tile: Artist|None = None,
     ) -> Artist:
         r"""Colors one tile.
