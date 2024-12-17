@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import numpy as np
+import torch
 from jarvis.config import from_cli, Config
 from jarvis.utils import tensor2array, array2tensor
 from jarvis.manager import Manager
@@ -133,7 +134,7 @@ def create_manager(
 
     """
     manager = Manager(
-        store_dir=Path(store_dir)/'beliefs'/subject,
+        store_dir=store_dir/'beliefs'/subject,
         save_interval=save_interval, patience=patience,
     )
     manager.data_path = data_dir/f'data_{subject}.mat'
@@ -213,14 +214,16 @@ def fetch_beliefs(
         Sequences of data for the specified block.
 
     """
-    manager = create_manager(data_dir, store_dir, subject)
-    ckpt = manager.process({
+    data_path = data_dir/f'data_{subject}.mat'
+    block_data = load_monkey_data(data_path, session_id, block_idx)
+    kappa = np.unique(block_data['kappas']).item()
+    manager = create_manager(data_dir, store_dir, subject, kappa)
+    manager.process({
         'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,
     })
-    observations = np.array(ckpt['observations'])
-    actions = np.array(ckpt['actions'])
-    knowns = np.array(ckpt['knowns'])
-    beliefs = np.array(ckpt['beliefs'])
+    observations, actions = manager.observations, manager.actions
+    knowns = np.array(manager.knowns)
+    beliefs = torch.stack(manager.beliefs)
     return observations, actions, knowns, beliefs
 
 def main(
