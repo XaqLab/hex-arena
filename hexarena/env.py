@@ -251,12 +251,22 @@ class ForagingEnv(Env):
                     vals.append(self.arena.nearest_tile(_xy))
             vals = np.array(vals, dtype=int)
             return vals
-
         pos = get_trajectory(block_data['pos_xyz'])
         gaze = get_trajectory(block_data['gaze_xyz'])
 
+        # actual color movie is not saved, using independent cue array generated
+        # at each time step instead
+        self.reset(seed=0) # remove stochasticity of box 'get_colors' method
+        colors = []
+        for i in range(num_steps+1):
+            cues = np.clip(block_data['cues'][t>=(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
+            colors.append([])
+            for box, cue in zip(self.boxes, cues):
+                colors[-1].append(box.get_colors(cue))
+        colors = np.array(colors, dtype=float)
+
         push_t, push_idx = block_data['push_t'], block_data['push_idx']
-        push, success, box_idx, t_wait = [], [], [], [np.zeros(self.num_boxes)]
+        push, success, rewarded, box_idx, t_wait = [], [], [None], [], [np.zeros(self.num_boxes)]
         for i in range(1, num_steps+1): # one step fewer than pos and gaze
             t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
             pushes = push_idx[t_idxs]
@@ -266,6 +276,7 @@ class ForagingEnv(Env):
                 )
             push.append(len(pushes)>0)
             success.append(np.any(block_data['push_flag'][t_idxs]))
+            rewarded.append(success[-1] if push[-1] else None)
             t_wait.append(t_wait[-1]+1)
             if len(pushes)>0:
                 b_idx = pushes[-1]
@@ -287,21 +298,10 @@ class ForagingEnv(Env):
             np.zeros((1, *counts.shape[1:])), counts,
         ], axis=0).astype(int)
 
-        # actual color movie is not saved, using independent cue array generated
-        # at each time step instead
-        self.reset(seed=0) # remove stochasticity of box 'get_colors' method
-        colors = []
-        for i in range(num_steps+1):
-            cues = np.clip(block_data['cues'][t>=(i+1)*self.dt, :][0], a_min=0, a_max=0.999)
-            colors.append([])
-            for box, cue in zip(self.boxes, cues):
-                colors[-1].append(box.get_colors(cue))
-        colors = np.array(colors, dtype=float)
-
         env_data = {
-            'num_steps': num_steps, 'pos': pos, 'gaze': gaze,
-            'push': push, 'success': success, 'box_idx': box_idx,
-            't_wait': t_wait, 'counts': counts, 'colors': colors,
+            'num_steps': num_steps, 'pos': pos, 'gaze': gaze, 'colors': colors,
+            'push': push, 'success': success, 'rewarded': rewarded,
+            'box_idx': box_idx, 't_wait': t_wait, 'counts': counts,
         }
         return env_data
 
@@ -654,7 +654,7 @@ class ForagingEnv(Env):
                 axes, p_boxes[tmin], p_max=p_boxes[tmin:tmax].max(),
             )
             cbar = plt.colorbar(artists_b[-1], ax=axes, fraction=1/8)
-            cbar.set_label('$P_\mathrm{box}$')
+            cbar.set_label(r'$P_\mathrm{box}$')
             cbar.ax.locator_params(nbins=5)
 
         def update(t, artists_a, artists_b):
