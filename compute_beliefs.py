@@ -9,21 +9,39 @@ from irc.model import SamplingBeliefModel
 
 from hexarena import DATA_DIR, STORE_DIR
 from hexarena.env import SimilarBoxForagingEnv
-from hexarena.alias import Array
+from hexarena.alias import Array, Tensor
 from hexarena.utils import get_valid_blocks, load_monkey_data, align_monkey_data
 
 
-def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str, int]]:
-    r"""Prepares blocks to process.
+def get_data_path(data_dir: Path, subject: str) -> Path:
+    r"""Returns data file path.
 
     Args
     ----
     data_dir:
         Directory that contains experiment data file, e.g. 'data_marco.mat'.
     subject:
-        Subject name.
+        Subject name, only 'marco' and 'viktor' are supported now.
+
+    Returns
+    -------
+    data_path:
+        Path to the MAT data file.
+
+    """
+    data_path = data_dir/f'data_{subject}.mat'
+    return data_path
+
+def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str, int]]:
+    r"""Prepares blocks to process.
+
+    Args
+    ----
+    data_dir, subject:
+        Data directory and subject name, see `get_data_path` for more details.
     kappa:
-        Cue reliability parameter.
+        Cue reliability parameter. The same value is used for all boxes, and
+        higher values mean less noise.
 
     Returns
     -------
@@ -31,7 +49,7 @@ def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str
         The block ID `(session_id, block_idx)` of all blocks to be processed.
 
     """
-    data_path = data_dir/f'data_{subject}.mat'
+    data_path = get_data_path(data_dir, subject)
     assert os.path.exists(data_path), f"{data_path} not found"
     assert subject in ['marco', 'viktor'], (
         "Only 'marco' and 'viktor' can be processed now."
@@ -62,11 +80,13 @@ def create_model(
     Args
     ----
     subject:
-        Subject name, only 'marco' and 'viktor' are supported now.
+        Subject name, see `get_data_path` for more details.
     kappa:
-        Cue reliability parameter.
+        Cue reliability parameter, see `prepare_blocks` for more details.
     env_kw:
         Keyword arguments of the environment.
+    model_kw:
+        Keyword arguments of the belief model.
 
     Returns
     -------
@@ -112,24 +132,26 @@ def create_manager(
     data_dir: Path, store_dir: Path, subject: str, kappa: float,
     save_interval: int = 10, patience: float = 12.,
 ) -> Manager:
-    r"""Creates a manager to handle batch processing.
+    r"""Creates a manager to compute beliefs.
 
     Args
     ----
-    data_dir, store_dir:
-        Directory of data and storage respectively.
+    data_dir:
+        Data directory, see `get_data_path` for more details.
+    store_dir:
+        Directory for storing computed beliefs.
     subject:
-        Subject name.
+        Subject name, see `get_data_path` for more details.
     kappa:
-        Cue reliability parameter.
+        Cue reliability parameter, see `prepare_blocks` fore more details.
     save_interval, patience:
-        Arguments of the manager object, see `jarvis.manager.Manager` for more
+        Arguments of the Manager object, see `jarvis.manager.Manager` for more
         details.
 
     Returns
     -------
     manager:
-        A manager object that computes beliefs for each experiment block. Batch
+        A Manager object that computes beliefs for each experiment block. Batch
         processing and resuming from checkpoint are supported.
 
     """
@@ -137,7 +159,7 @@ def create_manager(
         store_dir=store_dir/'beliefs'/subject,
         save_interval=save_interval, patience=patience,
     )
-    manager.data_path = data_dir/f'data_{subject}.mat'
+    manager.data_path = get_data_path(data_dir, subject)
     manager.env, manager.model = create_model(subject, kappa)
     manager.model.use_sample = True
     manager.default = {
@@ -198,7 +220,7 @@ def create_manager(
 def fetch_beliefs(
     data_dir: Path, store_dir: Path, subject: str,
     session_id: str, block_idx: int, num_samples: int = 1000,
-) -> tuple[Array, Array, Array, Array]:
+) -> tuple[Array, Array, Array, Tensor]:
     r"""Fetches computed beliefs.
 
     Args
@@ -206,7 +228,8 @@ def fetch_beliefs(
     data_dir, store_dir, subject:
         Arguments of `create_manager`.
     session_id, block_idx, num_samples:
-        Identifier of computed results.
+        Identifier of computed results, see `create_manager.setup` for more
+        details.
 
     Returns
     -------
@@ -214,7 +237,7 @@ def fetch_beliefs(
         Sequences of data for the specified block.
 
     """
-    data_path = data_dir/f'data_{subject}.mat'
+    data_path = get_data_path(data_dir, subject)
     block_data = load_monkey_data(data_path, session_id, block_idx)
     kappa = np.unique(block_data['kappas']).item()
     manager = create_manager(data_dir, store_dir, subject, kappa)
@@ -235,6 +258,30 @@ def main(
     save_interval: int = 10,
     patience: float = 12.,
 ):
+    r"""
+
+    Uses a manager to compute beliefs of all blocks of given subject and cue
+    reliability.
+
+    Args
+    ----
+    data_dir:
+        Data directory, see `get_data_path` for more details.
+    store_dir:
+        Directory of storage, see `create_manager` for more details.
+    subject:
+        Subject name, see `get_data_path` for more details.
+    kappa:
+        Cue reliability, see `prepare_blocks` for more details.
+    num_samples:
+        Number of state samples used in estimating new belief at each time step.
+    num_works:
+        Number of blocks to process.
+    save_interval, patience:
+        Arguments of the Manager object, see `jarvis.manager.Manager` for more
+        details.
+
+    """
     data_dir, store_dir = Path(data_dir), Path(store_dir)
     block_ids = prepare_blocks(data_dir, subject, kappa)
     manager = create_manager(
