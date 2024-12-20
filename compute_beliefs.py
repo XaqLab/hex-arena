@@ -32,7 +32,10 @@ def get_data_path(data_dir: Path, subject: str) -> Path:
     data_path = data_dir/f'data_{subject}.mat'
     return data_path
 
-def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str, int]]:
+def prepare_blocks(
+    data_dir: Path, subject: str, kappa: float,
+    verbose: bool = True,
+) -> list[tuple[str, int]]:
     r"""Prepares blocks to process.
 
     Args
@@ -42,6 +45,8 @@ def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str
     kappa:
         Cue reliability parameter. The same value is used for all boxes, and
         higher values mean less noise.
+    verbose:
+        Whether to print a summary message.
 
     Returns
     -------
@@ -67,7 +72,8 @@ def prepare_blocks(data_dir: Path, subject: str, kappa: float) -> list[tuple[str
                 to_process = False
             if to_process:
                 block_ids.append((session_id, block_idx))
-    print(f'{len(block_ids)} valid blocks found.')
+    if verbose:
+        print(f'{len(block_ids)} valid blocks found.')
     return block_ids
 
 def create_model(
