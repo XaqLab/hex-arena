@@ -15,7 +15,7 @@ from compute_beliefs import (
 
 def create_manager(
     data_dir: Path, store_dir: Path, subject: str, kappa: float,
-    num_samples: int = 1000, patience: float = 12.,
+    num_samples: int = 1000, patience: float = 1.,
 ) -> Manager:
     r"""Creates a manager to train belief VAE models.
 
@@ -38,7 +38,7 @@ def create_manager(
     manager = Manager(
         store_dir=store_dir/'belief_vaes'/subject, patience=patience,
     )
-    manager.block_ids = prepare_blocks(data_dir, subject, kappa, verbose=False)
+    manager.block_ids = prepare_blocks(data_dir, subject, kappa, verbose=True)
     _, _, _, manager.beliefs = zip(*[
         fetch_beliefs(
             data_dir, store_dir, subject, session_id, block_idx, num_samples,
