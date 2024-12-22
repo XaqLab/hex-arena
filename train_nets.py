@@ -48,9 +48,9 @@ def create_manager(
     def setup(config: Config):
         r"""
         config:
-          - subject: str
-          - kappa: float
-          - num_samples: int
+          - subject: str        # subject name
+          - kappa: float        # stimulus reliability
+          - num_samples: int    # number of samples used in belief computation
         """
         manager.seed = config.seed
         manager.model_kw = config.model_kw
@@ -96,10 +96,12 @@ def main(
 
     Args
     ----
-    data_dir, store_dir, subject, kappa, num_samples:
+    data_dir, store_dir, subject, kappa, num_samples, patience:
         Arguments of `create_manager`.
     choices:
         Job specifications which is a dict containing possible values.
+    num_works:
+        Number of works to process, see `Manager.batch` for more details.
 
     """
     data_dir, store_dir = Path(data_dir), Path(store_dir)
