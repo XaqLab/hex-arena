@@ -1,7 +1,9 @@
+import yaml
 from pathlib import Path
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
-from jarvis.utils import tqdm, tensor2array, array2tensor
+from jarvis.utils import tqdm, tensor2array, array2tensor, get_defaults
+from irc.model.network import NetworkBeliefModel
 
 from hexarena import DATA_DIR, STORE_DIR
 
@@ -33,14 +35,14 @@ def create_manager(
     manager = Manager(
         store_dir=store_dir/'belief_nets'/subject, patience=patience,
     )
-    block_ids = prepare_blocks(data_dir, subject, kappa, verbose=False)
+    block_ids = prepare_blocks(data_dir, subject, kappa)
     manager.observations, manager.actions, _, manager.beliefs = zip(*[
         fetch_beliefs(
             data_dir, store_dir, subject, session_id, block_idx, num_samples,
         ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
     ])
     manager.default = {
-        'seed': 0, 'model_kw': {},
+        'seed': 0, 'model_kw': {get_defaults(NetworkBeliefModel)['z_dim']},
         'update_kw': {'z_reg': 1e-4, 'num_epochs': 300},
         'init_kw': {'z_reg': 1e-4, 'num_epochs': 200},
     }
@@ -108,11 +110,13 @@ def main(
     manager = create_manager(
         data_dir, store_dir, subject, kappa, num_samples, patience,
     )
-    if choices is None or isinstance(choices, dict):
-        choices = Config(choices).fill({
-            'seed': list(range(6)),
-            'model_kw.z_dim': [8, 16, 32],
-        })
+    if isinstance(choices, (Path, str)):
+        with open(choices, 'r') as f:
+            choices = yaml.safe_load(f)
+    choices = Config(choices).fill({
+        'seed': list(range(6)),
+        'model_kw.z_dim': [8, 16, 32],
+    })
     configs = choices2configs(choices)
     manager.batch(configs, 1, num_works)
 
