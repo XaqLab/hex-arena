@@ -42,6 +42,7 @@ def create_manager(
         ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
     ])
     manager.default = {
+        'subject': subject, 'kappa': kappa, 'num_samples': num_samples,
         'seed': 0, 'model_kw': {get_defaults(NetworkBeliefModel)['z_dim']},
         'update_kw': {'z_reg': 1e-4, 'num_epochs': 300},
         'init_kw': {'z_reg': 1e-4, 'num_epochs': 200},
@@ -53,6 +54,10 @@ def create_manager(
           - subject: str        # subject name
           - kappa: float        # stimulus reliability
           - num_samples: int    # number of samples used in belief computation
+          - seed: int           # network initialiation seed
+          - model_kw: dict      # arguments of SamplingBeliefModel
+          - init_kw: dict       # arguments for training init_net
+          - update_kw: dict     # arguments for training update_net
         """
         manager.seed = config.seed
         manager.model_kw = config.model_kw
