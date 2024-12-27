@@ -50,7 +50,7 @@ def create_manager(
     manager.env, manager.model = create_model(subject, kappa)
     manager.default = {
         'subject': subject, 'kappa': kappa,
-        'num_samples': 1000, 'split': 0.95, 'seed': 0,
+        'num_samples': num_samples, 'split': 0.95, 'seed': 0,
         'vae_kw': {
             k: v for k, v in get_defaults(BaseDistributionNet).items()
             if k not in ['z_dim', 'p_x', 'ebd_y']
