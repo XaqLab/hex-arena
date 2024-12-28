@@ -15,7 +15,7 @@ from compute_beliefs import (
 
 def create_manager(
     data_dir: Path, store_dir: Path, subject: str, kappa: float,
-    num_samples: int = 1000, patience: float = 1.,
+    num_samples: int = 1000, patience: float = 1., load_beliefs: bool = True,
 ) -> Manager:
     r"""Creates a manager to train belief VAE models.
 
@@ -38,14 +38,15 @@ def create_manager(
     manager = Manager(
         store_dir=store_dir/'belief_vaes'/subject, patience=patience,
     )
-    manager.block_ids = prepare_blocks(data_dir, subject, kappa, verbose=True)
-    _, _, _, manager.beliefs = zip(*[
-        fetch_beliefs(
-            data_dir, store_dir, subject, session_id, block_idx, num_samples,
-        ) for session_id, block_idx in tqdm(
-            manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
-        )
-    ])
+    manager.block_ids = prepare_blocks(data_dir, subject, kappa, verbose=load_beliefs)
+    if load_beliefs:
+        _, _, _, manager.beliefs = zip(*[
+            fetch_beliefs(
+                data_dir, store_dir, subject, session_id, block_idx, kappa, num_samples,
+            ) for session_id, block_idx in tqdm(
+                manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
+            )
+        ])
     manager.data_path = get_data_path(data_dir, subject)
     manager.env, manager.model = create_model(subject, kappa)
     manager.default = {
@@ -81,11 +82,12 @@ def create_manager(
         n_train = n-n_test
         _idxs = np.random.default_rng(config.seed).choice(n, n, replace=False)
         manager.idxs = {'train': _idxs[:n_train], 'test': _idxs[n_train:]}
-        return float('inf')
-    def reset():
         manager.belief_vae = manager.model.create_belief_vae(
             z_dim=manager.z_dim, **manager.vae_kw,
         )
+        return float('inf')
+    def reset():
+        manager.belief_vae.reset(manager.seed)
         manager.losses = {'train': [], 'val': [], 'test': []}
         manager.min_loss, manager.best_state = float('inf'), None
     def step():
@@ -128,6 +130,55 @@ def create_manager(
     manager.get_ckpt = get_ckpt
     manager.load_ckpt = load_ckpt
     return manager
+
+def fetch_best_vae(
+    data_dir: Path, store_dir: Path,
+    subject: str, kappa: float, num_samples: int,
+    z_dim: int,
+    min_epoch: int = 20, cond: dict|None = None,
+) -> BaseDistributionNet|None:
+    r"""Fetches the best belief VAE satisfying conditions.
+
+    Args
+    ----
+    data_dir, store_dir, subject, kappa, num_samples:
+        Arguments for the manager, see `create_manager` for more details.
+    z_dim:
+        Latent state dimension of belief VAE.
+    min_epoch:
+        Mininum number of training epochs, see `Manager.completed` for more
+        details.
+    cond:
+        Conditions of VAE configuration, e.g. the regularization coefficients.
+        See `Manager.completed` for more details.
+
+    Returns
+    -------
+    belief_vae:
+        The best belief VAE in terms of the testing loss. If no trained VAEs are
+        found, return ``None``.
+
+    """
+    manager = create_manager(data_dir, store_dir, subject, kappa, num_samples, load_beliefs=False)
+    cond = Config(cond).fill({
+        'subject': subject, 'kappa': kappa, 'num_samples': num_samples, 'z_dim': z_dim,
+    })
+    min_loss, best_key = float('inf'), None
+    for key, _ in manager.completed(min_epoch, cond=cond):
+        ckpt = manager.ckpts[key]
+        losses_val = ckpt['losses']['val']
+        losses_test = ckpt['losses']['test']
+        loss = losses_test[losses_val.index(min(losses_val))]
+        if loss<min_loss:
+            min_loss = loss
+            best_key = key
+    if best_key is None:
+        print("No VAE satisfying conditions found.")
+        return None
+    manager.setup(manager.configs[best_key])
+    manager.load_ckpt(manager.ckpts[best_key])
+    belief_vae = manager.belief_vae
+    return belief_vae
 
 def main(
     data_dir: Path|str, store_dir: Path|str,
