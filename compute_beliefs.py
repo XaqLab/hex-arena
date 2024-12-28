@@ -225,7 +225,7 @@ def create_manager(
 
 def fetch_beliefs(
     data_dir: Path, store_dir: Path, subject: str,
-    session_id: str, block_idx: int, num_samples: int = 1000,
+    session_id: str, block_idx: int, kappa: float, num_samples: int = 1000,
 ) -> tuple[Array, Array, Array, Tensor]:
     r"""Fetches computed beliefs.
 
@@ -233,7 +233,7 @@ def fetch_beliefs(
     ----
     data_dir, store_dir, subject:
         Arguments of `create_manager`.
-    session_id, block_idx, num_samples:
+    session_id, block_idx, kappa, num_samples:
         Identifier of computed results, see `create_manager.setup` for more
         details.
 
@@ -243,9 +243,6 @@ def fetch_beliefs(
         Sequences of data for the specified block.
 
     """
-    data_path = get_data_path(data_dir, subject)
-    block_data = load_monkey_data(data_path, session_id, block_idx)
-    kappa = np.unique(block_data['kappas']).item()
     manager = create_manager(data_dir, store_dir, subject, kappa)
     manager.process({
         'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,

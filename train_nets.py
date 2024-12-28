@@ -38,7 +38,7 @@ def create_manager(
     block_ids = prepare_blocks(data_dir, subject, kappa)
     manager.observations, manager.actions, _, manager.beliefs = zip(*[
         fetch_beliefs(
-            data_dir, store_dir, subject, session_id, block_idx, num_samples,
+            data_dir, store_dir, subject, session_id, block_idx, kappa, num_samples,
         ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
     ])
     manager.default = {
@@ -97,7 +97,7 @@ def main(
     data_dir: Path|str, store_dir: Path|str,
     subject: str, kappa: float, num_samples: int,
     choices: dict|Path|str|None = None,
-    patience: float = 12., num_works: int|None = None,
+    patience: float = 24., num_works: int|None = None,
 ):
     r"""Trains belief networks for a belief model.
 
