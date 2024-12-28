@@ -115,7 +115,7 @@ class Arena:
                         for l in range(-1 if k==0 else 0, 3):
                             append_seg(x, y, theta+l*np.pi/3)
         for segment in segments:
-            ax.plot(segment[0], segment[1], color='ivory', linestyle='--', linewidth=0.5)
+            ax.plot(segment[0], segment[1], color='silver', linestyle='--', linewidth=0.5)
 
         ax.set_xlim([-1.1, 1.1])
         ax.set_ylim([-1.1, 1.1])
