@@ -173,7 +173,7 @@ def fetch_best_vae(
             min_loss = loss
             best_key = key
     if best_key is None:
-        print("No VAE satisfying conditions found.")
+        print(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
         return None
     manager.setup(manager.configs[best_key])
     manager.load_ckpt(manager.ckpts[best_key])
