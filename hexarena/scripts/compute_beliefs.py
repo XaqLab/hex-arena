@@ -90,15 +90,15 @@ def fetch_beliefs(
     subject: str, kappa: float, num_samples: int,
     session_id: str, block_idx: int,
 ) -> tuple[Array, Array, Array, Tensor]:
-    r"""Fetches computed beliefs.
+    r"""Fetches computed beliefs for one block.
 
     Args
     ----
-    data_dir, store_dir, subject:
-        Arguments of `create_manager`.
-    session_id, block_idx, kappa, num_samples:
-        Identifier of computed results, see `create_manager.setup` for more
-        details.
+    subject, kappa, num_samples:
+        Subject name, cue reliability and number of state samples. See `main`
+        for more details.
+    session_id, block_idx:
+        Session ID and block index for specifying a block.
 
     Returns
     -------
