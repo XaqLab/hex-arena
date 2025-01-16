@@ -3,52 +3,34 @@ import numpy as np
 import torch
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
-from jarvis.utils import tqdm, tensor2array, array2tensor, get_defaults
+from jarvis.utils import tqdm, get_defaults, tensor2array, array2tensor
 from irc.dist.net import BaseDistributionNet
 
-from hexarena import DATA_DIR, STORE_DIR
-
-from compute_beliefs import (
-    get_data_path, create_model, prepare_blocks, fetch_beliefs,
-)
+from .. import STORE_DIR
+from .common import get_block_ids, create_env_and_model
+from .compute_beliefs import fetch_beliefs
 
 
 def create_manager(
-    data_dir: Path, store_dir: Path, subject: str, kappa: float,
-    num_samples: int = 1000, patience: float = 1., load_beliefs: bool = True,
+    subject: str, kappa: float, num_samples: int,
+    save_interval: int = 1, patience: float = 1.,
 ) -> Manager:
-    r"""Creates a manager to train belief VAE models.
+    r"""Creates a manager for compressing beliefs.
 
     Args
     ----
-    data_dir:
-        Data directory, see `get_data_path` for more details.
-    store_dir:
-        Directory of storing trained VAE models.
-    subject:
-        Subject name, see `get_data_path` for more details.
-    kappa:
-        Cue reliability, see `get_data_path` for more details.
-    num_samples:
-        Number of samples used in belief estimation.
-    patience:
-        Arguments of the Manager object, see `Manager` for more details.
+    subject, kappa, num_samples:
+        Subject name, cue reliability and number of state samples, see `main`
+        for more details.
+    save_interval, patience:
+        Arguments of the manager, see `Manager` for more details.
 
     """
     manager = Manager(
-        store_dir=store_dir/'belief_vaes'/subject, patience=patience,
+        STORE_DIR/'belief_vaes'/subject, save_interval=save_interval, patience=patience,
     )
-    manager.block_ids = prepare_blocks(data_dir, subject, kappa, verbose=load_beliefs)
-    if load_beliefs:
-        _, _, _, manager.beliefs = zip(*[
-            fetch_beliefs(
-                data_dir, store_dir, subject, session_id, block_idx, kappa, num_samples,
-            ) for session_id, block_idx in tqdm(
-                manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
-            )
-        ])
-    manager.data_path = get_data_path(data_dir, subject)
-    manager.env, manager.model = create_model(subject, kappa)
+    manager.env, manager.model = create_env_and_model(subject, kappa)
+    manager.block_ids = get_block_ids(subject, kappa)
     manager.default = {
         'subject': subject, 'kappa': kappa,
         'num_samples': num_samples, 'split': 0.95, 'seed': 0,
@@ -77,9 +59,15 @@ def create_manager(
         manager.z_dim, manager.vae_kw = config.z_dim, config.vae_kw
         manager.regress_kw = config.regress_kw
         manager.seed = config.seed
+        _, _, _, manager.beliefs = zip(*[
+            fetch_beliefs(
+                subject, kappa, num_samples, session_id, block_idx,
+            ) for session_id, block_idx in tqdm(
+                manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
+            )
+        ])
         n = len(manager.block_ids)
-        n_test = int(np.ceil(n*(1-config.split)))
-        n_train = n-n_test
+        n_train = int(np.floor(n*config.split))
         _idxs = np.random.default_rng(config.seed).choice(n, n, replace=False)
         manager.idxs = {'train': _idxs[:n_train], 'test': _idxs[n_train:]}
         manager.belief_vae = manager.model.create_belief_vae(
@@ -88,15 +76,14 @@ def create_manager(
         return float('inf')
     def reset():
         manager.belief_vae.reset(manager.seed)
-        manager.losses = {'train': [], 'val': [], 'test': []}
+        manager.losses = {'train': [], 'val': [], 'test': []} # KL losses only
         manager.min_loss, manager.best_state = float('inf'), None
     def step():
-        manager.belief_vae.rng = np.random.default_rng(manager.seed) # reset train/val split
         beliefs_train = torch.cat([manager.beliefs[i] for i in manager.idxs['train']])
-        beliefs_test = torch.cat([manager.beliefs[i] for i in manager.idxs['test']])
+        manager.belief_vae.rng = np.random.default_rng(manager.seed) # reset train/val split
         stats = manager.belief_vae.regress(
-            beliefs_train, beliefs_train,
-            num_epochs=1, pbar_kw={'disable': True}, **manager.regress_kw,
+            beliefs_train, beliefs_train, num_epochs=1,
+            pbar_kw={'disable': True}, **manager.regress_kw,
         )
         loss = (stats['losses_val'][-1]*stats['alphas']).sum()
         if loss<manager.min_loss:
@@ -104,6 +91,8 @@ def create_manager(
             manager.best_state = manager.belief_vae.state_dict()
         manager.losses['train'].append(stats['losses_train'][-1, 0])
         manager.losses['val'].append(stats['losses_val'][-1, 0])
+
+        beliefs_test = torch.cat([manager.beliefs[i] for i in manager.idxs['test']])
         with torch.no_grad():
             _, _, recons = manager.belief_vae(beliefs_test)
         kl_losses, _ = zip(*[
@@ -124,6 +113,7 @@ def create_manager(
         manager.best_state = ckpt['best_state']
         manager.belief_vae.load_state_dict(ckpt['last_state'])
         return len(manager.losses['test'])
+
     manager.setup = setup
     manager.reset = reset
     manager.step = step
@@ -131,10 +121,9 @@ def create_manager(
     manager.load_ckpt = load_ckpt
     return manager
 
+
 def fetch_best_vae(
-    data_dir: Path, store_dir: Path,
-    subject: str, kappa: float, num_samples: int,
-    z_dim: int,
+    subject: str, kappa: float, num_samples: int, z_dim: int,
     min_epoch: int = 20, cond: dict|None = None,
 ) -> BaseDistributionNet|None:
     r"""Fetches the best belief VAE satisfying conditions.
@@ -159,7 +148,7 @@ def fetch_best_vae(
         found, return ``None``.
 
     """
-    manager = create_manager(data_dir, store_dir, subject, kappa, num_samples, load_beliefs=False)
+    manager = create_manager(subject, kappa, num_samples)
     cond = Config(cond).fill({
         'subject': subject, 'kappa': kappa, 'num_samples': num_samples, 'z_dim': z_dim,
     })
@@ -180,33 +169,35 @@ def fetch_best_vae(
     belief_vae = manager.belief_vae
     return belief_vae
 
+
 def main(
-    data_dir: Path|str, store_dir: Path|str,
     subject: str, kappa: float, num_samples: int,
-    patience: float = 12,
     choices: dict|Path|str|None = None,
     num_epochs: int = 80,
     num_works: int|None = None,
+    max_errors: int = 10,
+    **kwargs,
 ):
-    r"""
-
-    Uses a manager to compress beliefs of all blocks given subject and cue
-    reliability.
+    r"""Compresses pre-computed beliefs of blocks of the same environment.
 
     Args
     ----
-    data_dir, store_dir, subject, kappa, num_samples, patience:
-        Arguments of `create_manager`.
+    subject_name:
+        Subject name, can be 'marco', 'dylan' or 'viktor'.
+    kappa:
+        Cue reliability, higher value means more reliable color cue.
+    num_samples:
+        Number of state samples used in estimating new belief at each time step.
     choices:
-        Job specifications which is a dict containing possible values.
-    num_epochs:
-        Number of epochs of training belief VAE models.
-    num_works:
-        Number of works to process, see `Manager.batch` for more details.
+        Job specifications, corresponding to a dictionary with keys of 'config'.
+        See `setup` in `create_manager` for more details.
+    num_epochs, num_works, max_errors:
+        Arguments for batch processing, see `Manager.batch` for more details.
+    kwargs:
+        Keyword arguments of the manager, see `Manager` for more details.
 
     """
-    data_dir, store_dir = Path(data_dir), Path(store_dir)
-    manager = create_manager(data_dir, store_dir, subject, kappa, num_samples, patience)
+    manager = create_manager(subject, kappa, num_samples, **kwargs)
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
             'z_dim': list(range(12)),
@@ -214,10 +205,16 @@ def main(
             'regress_kw.z_reg': [1., 0.1, 0.01],
         })
     configs = choices2configs(choices)
-    manager.batch(configs, num_epochs, num_works)
+    manager.batch(
+        configs, num_epochs, num_works, max_errors,
+        pbar_kw={'unit': 'block', 'leave': True},
+    )
+
 
 if __name__=='__main__':
     main(**from_cli().fill({
-        'data_dir': DATA_DIR, 'store_dir': STORE_DIR,
-        'subject': 'marco', 'kappa': 0.1, 'num_samples': 1000,
+        'subject': 'marco',
+        'kappa': 0.1,
+        'num_samples': 1000,
     }))
+

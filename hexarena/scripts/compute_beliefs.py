@@ -102,13 +102,19 @@ def fetch_beliefs(
 
     Returns
     -------
-    observations, actions, knowns, beliefs:
-        Sequences of data for the specified block.
+    observations: (num_steps+1, .)
+        Observation sequence of the block.
+    actions: (num_steps,)
+        Action sequence of the block.
+    knowns: (num_steps+1, .)
+        Known part of the state sequence of the block.
+    beliefs: (num_steps+1, .)
+        Belief sequence about the unknown part of state.
 
     """
-    manager = create_manager(subject, kappa)
+    manager = create_manager(subject, kappa, num_samples)
     manager.process({
-        'session_id': session_id, 'block_idx': block_idx, 'num_samples': num_samples,
+        'session_id': session_id, 'block_idx': block_idx,
     })
     observations, actions = manager.observations, manager.actions
     knowns = np.array(manager.knowns)
@@ -121,8 +127,7 @@ def main(
     num_works: int|None = None,
     **kwargs,
 ):
-    r"""
-    Computes beliefs of all blocks given subject and cue reliability.
+    r"""Computes beliefs of all blocks given subject and cue reliability.
 
     Args
     ----
