@@ -1,26 +1,52 @@
+import os
+from pathlib import Path
 import h5py
 import numpy as np
 from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
+from . import DATA_DIR
+
+def get_data_pth(subject: str) -> Path:
+    r"""Returns mat file path.
+
+    Args
+    ----
+    subject:
+        Subject name, can be 'marco', 'dylan' or 'viktor'.
+
+    Returns
+    -------
+    data_pth:
+        Path to the mat file.
+
+    """
+    data_pth = DATA_DIR/f'data_{subject}.mat'
+    assert os.path.exists(data_pth), f"{data_pth} not found"
+    return data_pth
+
 
 def get_valid_blocks(
-    filename,
+    subject: str,
+    gamma_shape: float|None = None,
     min_duration: float = 300.,
     min_pos_ratio: float = 0.,
     min_gaze_ratio: float = 0.,
     min_push: int = 5,
     min_reward: int = 5,
-) -> dict:
-    r"""Returns valid blocks in mat file.
+) -> dict[tuple[str, int], dict[str, int|float]]:
+    r"""Returns information of valid blocks saved in the mat file.
 
-    For exponential schedule (Gamma shape 1), only time constants '{15, 21, 35}'
-    is valid. For Gamma schedule of shape 10, only time constants '{7, 14, 21}'
-    is valid.
+    For exponential schedule (Gamma shape 1), only blocks with time constants
+    '{15, 21, 35}' is valid. For Gamma schedule of shape 10, only blocks with
+    time constants '{7, 14, 21}' is valid.
 
     Args
     ----
-    filename:
-        Path to the mat file.
+    subject:
+        Subject name.
+    gamma_shape:
+        Gamma shape parameter for the blocks of interest. If ``None``, any shape
+        is valid.
     min_duration:
         Mininum duration of a block, in seconds.
     min_pos_ratio:
@@ -34,18 +60,21 @@ def get_valid_blocks(
 
     Returns
     -------
-    meta:
-        A dict with session ID as keys, each value is a dict of dicts containing
-        summary information of valid blocks, using block index (starting from 0)
-        as key.
+    block_infos:
+        A dict with block ID `(session_id, block_idx)` as keys, each value is a
+        dict containing summary information of valid blocks, containing keys:
+        - 'duration': float, block duration in seconds
+        - 'pos_ratio': float, valid data ratio of position data
+        - 'gaze_ratio': float, valid data ratio of gaze data
+        - 'push': int, number of pushes
+        - 'reward': int, number of rewards
 
     """
-    with h5py.File(filename, 'r') as f:
+    with h5py.File(get_data_pth(subject), 'r') as f:
         num_sessions = len(f['session']['id'])
-        meta = {}
+        block_infos = {}
         for s_idx in range(num_sessions):
             session_id = ''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]])
-            meta[session_id] = {}
             blocks = f[f['session']['block'][s_idx, 0]]
             num_blocks = len(blocks['continuous'])
             for b_idx in range(num_blocks):
@@ -55,7 +84,7 @@ def get_valid_blocks(
                 duration = toc-tic
                 if duration<min_duration:
                     continue
-                _meta = {'duration': np.round(duration*1000)/1000} # precision 1 ms
+                meta = {'duration': np.round(duration*1000)/1000} # precision 1 ms
 
                 block = f[blocks['continuous'][b_idx][0]]
                 t = np.array(block['t']).squeeze()
@@ -68,24 +97,24 @@ def get_valid_blocks(
                     pos_ratio = 1-np.any(np.isnan(pos_xyz[:, :2]), axis=1).mean()
                 else:
                     pos_ratio = 0.
-                _meta.update({'pos_ratio': pos_ratio})
+                meta.update({'pos_ratio': pos_ratio})
                 gaze_xyz = np.array(block['eyeArenaInt']).squeeze()
                 if gaze_xyz.shape==(len(t), 3):
                     gaze_xyz = gaze_xyz[mask]
                     gaze_ratio = 1-np.any(np.isnan(gaze_xyz[:, :2]), axis=1).mean()
                 else:
                     gaze_ratio = 0.
-                _meta.update({'gaze_ratio': gaze_ratio})
-                if _meta['pos_ratio']<min_pos_ratio or _meta['gaze_ratio']<min_gaze_ratio:
+                meta.update({'gaze_ratio': gaze_ratio})
+                if meta['pos_ratio']<min_pos_ratio or meta['gaze_ratio']<min_gaze_ratio:
                     continue
 
                 block = f[blocks['events'][b_idx][0]]
                 pushes = np.array(block['tPush']['all'], dtype=float).squeeze()
                 flags = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
-                _meta.update({
+                meta.update({
                     'push': len(pushes), 'reward': np.sum(flags),
                 })
-                if _meta['push']<min_push or _meta['reward']<min_reward:
+                if meta['push']<min_push or meta['reward']<min_reward:
                     continue
 
                 block = f[blocks['params'][b_idx][0]]
@@ -95,16 +124,16 @@ def get_valid_blocks(
                 taus = np.array(block['schedules']).squeeze()
                 if np.any(np.isnan(taus)):
                     continue
-                gamma_shape = np.array(block['gammaShape'])[0, 0]
-                if gamma_shape==1. and set(taus)!=set([15., 21., 35.]):
+                gs = np.array(block['gammaShape'])[0, 0]
+                if gamma_shape is not None and gs!=gamma_shape:
                     continue
-                if gamma_shape==10. and set(taus)!=set([7., 14., 21.]):
+                if gs==1. and set(taus)!=set([15., 21., 35.]):
+                    continue
+                if gs==10. and set(taus)!=set([7., 14., 21.]):
                     continue
 
-                meta[session_id][b_idx] = _meta
-            if len(meta[session_id])==0:
-                meta.pop(session_id)
-    return meta
+                block_infos[(session_id, b_idx)] = meta
+    return block_infos
 
 
 def _infer_slope(t, cues):
@@ -136,7 +165,7 @@ def _infer_slope(t, cues):
     return t_draws
 
 
-def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
+def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
     r"""Loads one block data from mat file.
 
     Compatible with data files prepared in May 2024, e.g. 'data_Marco.mat',
@@ -145,8 +174,8 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
 
     Args
     ----
-    filename:
-        Path to data file.
+    subject:
+        Subject name.
     session_id:
         A 8-digit string of experiment session, typically in the format of
         'YYYYMMDD'.
@@ -178,7 +207,7 @@ def load_monkey_data(filename, session_id: str, block_idx: int) -> dict:
 
     """
     block_data = {}
-    with h5py.File(filename, 'r') as f:
+    with h5py.File(get_data_pth(subject), 'r') as f:
         num_sessions = len(f['session']['id'])
         session_ids = []
         for s_idx in range(num_sessions):
