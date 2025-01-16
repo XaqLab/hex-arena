@@ -27,7 +27,6 @@ def get_data_pth(subject: str) -> Path:
 
 def get_valid_blocks(
     subject: str,
-    gamma_shape: float|None = None,
     min_duration: float = 300.,
     min_pos_ratio: float = 0.,
     min_gaze_ratio: float = 0.,
@@ -44,9 +43,6 @@ def get_valid_blocks(
     ----
     subject:
         Subject name.
-    gamma_shape:
-        Gamma shape parameter for the blocks of interest. If ``None``, any shape
-        is valid.
     min_duration:
         Mininum duration of a block, in seconds.
     min_pos_ratio:
@@ -68,6 +64,8 @@ def get_valid_blocks(
         - 'gaze_ratio': float, valid data ratio of gaze data
         - 'push': int, number of pushes
         - 'reward': int, number of rewards
+        - 'kappa': float, cue reliability
+        - 'gamma': float, shape parameter of Gamma distribution
 
     """
     with h5py.File(get_data_pth(subject), 'r') as f:
@@ -121,16 +119,16 @@ def get_valid_blocks(
                 kappas = np.array(block['kappa']).squeeze()
                 if np.any(np.isnan(kappas)) or len(np.unique(kappas))>1:
                     continue
+                meta['kappa'] = np.unique(kappas).item()
                 taus = np.array(block['schedules']).squeeze()
                 if np.any(np.isnan(taus)):
                     continue
-                gs = np.array(block['gammaShape'])[0, 0]
-                if gamma_shape is not None and gs!=gamma_shape:
+                gamma = np.array(block['gammaShape'])[0, 0]
+                if gamma==1. and set(taus)!=set([15., 21., 35.]):
                     continue
-                if gs==1. and set(taus)!=set([15., 21., 35.]):
+                if gamma==10. and set(taus)!=set([7., 14., 21.]):
                     continue
-                if gs==10. and set(taus)!=set([7., 14., 21.]):
-                    continue
+                meta['gamma'] = gamma
 
                 block_infos[(session_id, b_idx)] = meta
     return block_infos
