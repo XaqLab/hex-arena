@@ -54,7 +54,7 @@ class BaseFoodBox:
         self.param_names = ['kappa']
 
     def __repr__(self) -> str:
-        return f"Box with {self.num_levels} levels and {self.num_grades} color grades"
+        return f"Box with {self.num_levels} levels"
 
     @property
     def spec(self) -> dict:
@@ -456,10 +456,7 @@ class GammaLinearBox(BaseFoodBox):
         self.param_names += ['tau']
 
     def __repr__(self) -> str:
-        return (
-            f"Box with Gamma ({self.shape}, {self.scale}) schedule and "
-            f"{self.num_grades} color grades"
-        )
+        return f"Box with Gamma ({self.shape}, {self.scale}) schedule"
 
     @property
     def spec(self) -> dict:
