@@ -41,7 +41,7 @@ def create_manager(
         'regress_kw': get_defaults(BaseDistributionNet.train),
     }
 
-    def setup(config: Config):
+    def setup(config: Config, read_only: bool = False):
         r"""
         config:
           - subject: str        # subject name
@@ -59,20 +59,21 @@ def create_manager(
         manager.z_dim, manager.vae_kw = config.z_dim, config.vae_kw
         manager.regress_kw = config.regress_kw
         manager.seed = config.seed
-        _, _, _, manager.beliefs = zip(*[
-            fetch_beliefs(
-                subject, kappa, num_samples, session_id, block_idx,
-            ) for session_id, block_idx in tqdm(
-                manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
-            )
-        ])
-        n = len(manager.block_ids)
-        n_train = int(np.floor(n*config.split))
-        _idxs = np.random.default_rng(config.seed).choice(n, n, replace=False)
-        manager.idxs = {'train': _idxs[:n_train], 'test': _idxs[n_train:]}
         manager.belief_vae = manager.model.create_belief_vae(
             z_dim=manager.z_dim, **manager.vae_kw,
         )
+        if not read_only:
+            _, _, _, manager.beliefs = zip(*[
+                fetch_beliefs(
+                    subject, kappa, num_samples, session_id, block_idx,
+                ) for session_id, block_idx in tqdm(
+                    manager.block_ids, desc='Fetching beliefs', unit='block', leave=False,
+                )
+            ])
+            n = len(manager.block_ids)
+            n_train = int(np.floor(n*config.split))
+            _idxs = np.random.default_rng(config.seed).choice(n, n, replace=False)
+            manager.idxs = {'train': _idxs[:n_train], 'test': _idxs[n_train:]}
         return float('inf')
     def reset():
         manager.belief_vae.reset(manager.seed)
@@ -164,7 +165,7 @@ def fetch_best_vae(
     if best_key is None:
         print(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
         return None
-    manager.setup(manager.configs[best_key])
+    manager.setup(manager.configs[best_key], read_only=True)
     manager.load_ckpt(manager.ckpts[best_key])
     belief_vae = manager.belief_vae
     return belief_vae
