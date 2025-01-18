@@ -39,7 +39,7 @@ def get_block_ids(
 
 
 def create_env_and_model(
-    subject: str, kappa: float,
+    subject: str, kappa: float = 0.,
     env_kw: dict|None = None,
     model_kw: dict|None = None,
 ) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:

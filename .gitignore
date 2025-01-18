@@ -1,6 +1,7 @@
 *.pyc
 hexarena.egg-info
 .ipynb_checkpoints
+data
 store
 figures
 id_ed25519
