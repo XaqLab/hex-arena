@@ -4,6 +4,7 @@ from scipy import stats
 from gymnasium.spaces import MultiDiscrete
 from irc.dist.space import DiscreteVarSpace
 from irc.dist.embedder import BaseEmbedder
+from irc.model import SamplingBeliefModel
 
 from collections.abc import Sequence
 
@@ -618,3 +619,29 @@ class LinearBoxStateEmbedder(BaseEmbedder):
             feats.append((interval/20, timer/interval))
         feats = torch.tensor(feats, dtype=torch.float, device=xs.device)
         return feats
+
+def belief2probs(
+    model: SamplingBeliefModel, beliefs: Tensor,
+):
+    r"""Converts belief vector to state probabilities of each box."""
+    n_boxes = model.env.num_boxes
+    n_levels = None
+    for i in range(n_boxes):
+        if n_levels is None:
+            n_levels = model.env.boxes[i].num_levels
+        else:
+            assert n_levels==model.env.boxes[i].num_levels
+    assert isinstance(model.env.boxes[0], GammaLinearBox)
+    n_samples, belief_dim = beliefs.shape
+    param_dim = belief_dim//n_boxes
+    p_boxes = np.zeros((n_samples, n_boxes, n_levels, n_levels+1)) # P(interval, timer) for all boxes
+    for i in range(n_boxes):
+        p_s = model.p_s.s_dists[i]
+        all_xs = p_s.all_xs
+        for t in range(n_samples):
+            param_vec = beliefs[t, i*param_dim:(i+1)*param_dim]
+            logps, _ = p_s.loglikelihoods(all_xs, param_vec)
+            for k in range(len(all_xs)):
+                interval, timer = model.env.boxes[i]._idx2sub(k)
+                p_boxes[t, i, interval-1, timer] = logps[k].exp().item()
+    return p_boxes
