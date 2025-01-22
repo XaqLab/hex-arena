@@ -1,10 +1,10 @@
 apiVersion: batch/v1 # Jobs Default K8 API
 kind: Job # This tells kubernetes what kind of class it is working with
 metadata:
-  name: viktor-10k-beliefs # Name of the Job
+  name: viktor-10k-010-beliefs # Name of the Job
 spec:
-  completions: 40
-  parallelism: 20
+  completions: 8
+  parallelism: 8
   template: # Pod Templete
     metadata:
       labels:
@@ -65,5 +65,5 @@ spec:
           - "-c"
           - >
             python -u -m hexarena.scripts.compute_beliefs
-            subject=viktor num_samples=10000
-            max_wait=10 num_works=1 patience=1
+            subject=viktor kappa=0.1 num_samples=10000
+            max_wait=10 num_works=1 patience=3

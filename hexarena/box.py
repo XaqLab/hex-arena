@@ -623,7 +623,23 @@ class LinearBoxStateEmbedder(BaseEmbedder):
 def belief2probs(
     model: SamplingBeliefModel, beliefs: Tensor,
 ):
-    r"""Converts belief vector to state probabilities of each box."""
+    r"""Converts belief vector to state probabilities of each box.
+
+    Args
+    ----
+    model:
+        A sampling-based belief model for the environment using `GammaLinearBox`.
+    beliefs: (num_samples, belief_dim)
+        A collection of beliefs for all boxes. Each belief vector is the
+        concatenation of individual belief for one box.
+
+    Returns
+    -------
+    p_boxes: (num_samples, num_boxes, num_levels, num_levels+1)
+        Probability values of all boxes, the last 2 dimension corresponding to
+        drawn interval and the internal timer, i.e., P(interval, timer).
+
+    """
     n_boxes = model.env.num_boxes
     n_levels = None
     for i in range(n_boxes):
