@@ -449,7 +449,7 @@ class GammaLinearBox(BaseFoodBox):
         super().__init__(num_levels=max_interval, **kwargs)
         self.scale = tau/shape
         self.shape = shape
-        assert max_interval>=stats.gamma.ppf(0.99, self.shape, scale=self.scale)/self.dt, (
+        assert max_interval>=stats.gamma.ppf(0.95, self.shape, scale=self.scale)/self.dt, (
             f"'max_interval' {max_interval} too small for "
             f"the Gamma distribution ({self.shape}, {self.scale})"
         )

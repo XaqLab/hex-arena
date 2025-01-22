@@ -81,17 +81,20 @@ def create_env_and_model(
         env_kw = Config(env_kw).fill({
             'box': {
                 '_target_': 'hexarena.box.GammaLinearBox',
-                'max_interval': 40,
+                'max_interval': 36,
             },
             'boxes': [{'tau': tau} for tau in [21, 14, 7]],
+            'monkey': {'num_grades': 24},
         })
         model_kw = Config(model_kw).fill({
             'p_s.phis': [{
                 'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
-                'mlp_features': [16, 8],
+                'mlp_features': [16, 4],
             }]*3,
         })
     env_kw.update({'box.kappa': kappa})
     env = SimilarBoxForagingEnv(**env_kw)
     model = SamplingBeliefModel(env, **model_kw)
+    if subject=='viktor':
+        model.estimate_kw.update({'sga_kw.num_epochs': 400})
     return env, model
