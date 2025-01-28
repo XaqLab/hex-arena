@@ -1,44 +1,36 @@
-import yaml
 from pathlib import Path
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
-from jarvis.utils import tqdm, tensor2array, array2tensor, get_defaults
-from irc.model.network import NetworkBeliefModel
+from jarvis.utils import tqdm, get_defaults, tensor2array, array2tensor
+from irc.model import NetworkBeliefModel
 
-from hexarena import DATA_DIR, STORE_DIR
-
-from compute_beliefs import prepare_blocks, create_model, fetch_beliefs
+from .. import STORE_DIR
+from .common import get_block_ids, create_env_and_model
+from .compute_beliefs import fetch_beliefs
 
 
 def create_manager(
-    data_dir: Path, store_dir: Path, subject: str, kappa: float,
-    num_samples: int = 1000, patience: float = 12.,
+    subject: str, kappa: float, num_samples: int,
+    save_interval: int = 1, patience: float = 24.,
 ) -> Manager:
-    r"""Creates a manager to train networks for belief dynamics.
+    r"""Creates a manager for training belief nets.
 
     Args
     ----
-    data_dir:
-        Data directory, see `get_data_path` for more details.
-    store_dir:
-        Directory of storing trained VAE models.
-    subject:
-        Subject name, see `get_data_path` for more details.
-    kappa:
-        Cue reliability, see `get_data_path` for more details.
-    num_samples:
-        Number of samples used in belief estimation.
-    patience:
-        Arguments of the Manager object, see `Manager` for more details.
+    subject, kappa, num_samples:
+        Subject name, cue reliability and number of state samples, see `main`
+        for more details.
+    save_interval, patience:
+        Arguments of the manager, see `Manager` for more details.
 
     """
     manager = Manager(
-        store_dir=store_dir/'belief_nets'/subject, patience=patience,
+        STORE_DIR/'belief_nets'/subject, save_interval=save_interval, patience=patience,
     )
-    block_ids = prepare_blocks(data_dir, subject, kappa)
+    block_ids = get_block_ids(subject, kappa)
     manager.observations, manager.actions, _, manager.beliefs = zip(*[
         fetch_beliefs(
-            data_dir, store_dir, subject, session_id, block_idx, kappa, num_samples,
+            subject, kappa, num_samples, session_id, block_idx,
         ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
     ])
     manager.default = {
@@ -66,7 +58,7 @@ def create_manager(
         }
         return 1 # one epoch for manager
     def reset():
-        _, manager.model = create_model(subject, kappa, model_kw=manager.model_kw)
+        _, manager.model = create_env_and_model(subject, kappa, model_kw=manager.model_kw)
         manager.model.init_net.reset(manager.seed)
         manager.model.update_net.reset(manager.seed)
         manager.stats_u, manager.stats_i = None, None
@@ -93,11 +85,12 @@ def create_manager(
     manager.load_ckpt = load_ckpt
     return manager
 
+
 def main(
-    data_dir: Path|str, store_dir: Path|str,
     subject: str, kappa: float, num_samples: int,
     choices: dict|Path|str|None = None,
-    patience: float = 24., num_works: int|None = None,
+    num_works: int|None = None,
+    **kwargs,
 ):
     r"""Trains belief networks for a belief model.
 
@@ -111,22 +104,21 @@ def main(
         Number of works to process, see `Manager.batch` for more details.
 
     """
-    data_dir, store_dir = Path(data_dir), Path(store_dir)
     manager = create_manager(
-        data_dir, store_dir, subject, kappa, num_samples, patience,
+        subject, kappa, num_samples, **kwargs,
     )
-    if isinstance(choices, (Path, str)):
-        with open(choices, 'r') as f:
-            choices = yaml.safe_load(f)
-    choices = Config(choices).fill({
-        'seed': list(range(6)),
-        'model_kw.z_dim': [8, 16, 32],
-    })
+    if choices is None or isinstance(choices, dict):
+        choices = Config(choices).fill({
+            'seed': list(range(6)),
+            'model_kw.z_dim': [8, 16, 32],
+        })
     configs = choices2configs(choices)
     manager.batch(configs, 1, num_works)
 
+
 if __name__=='__main__':
     main(**from_cli().fill({
-        'data_dir': DATA_DIR, 'store_dir': STORE_DIR,
-        'subject': 'marco', 'kappa': 0.1, 'num_samples': 1000,
+        'subject': 'marco',
+        'kappa': 0.1,
+        'num_samples': 1000,
     }))
