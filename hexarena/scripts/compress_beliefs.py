@@ -131,8 +131,9 @@ def fetch_best_vae(
 
     Args
     ----
-    data_dir, store_dir, subject, kappa, num_samples:
-        Arguments for the manager, see `create_manager` for more details.
+    subject, kappa, num_samples:
+        Subject name, cue reliability and number of state samples. See `main`
+        for more details.
     z_dim:
         Latent state dimension of belief VAE.
     min_epoch:

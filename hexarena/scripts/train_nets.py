@@ -1,4 +1,5 @@
 from pathlib import Path
+import numpy as np
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
 from jarvis.utils import tqdm, get_defaults, tensor2array, array2tensor
@@ -10,7 +11,7 @@ from .compute_beliefs import fetch_beliefs
 
 
 def create_manager(
-    subject: str, kappa: float, num_samples: int,
+    subject: str, kappa: float, num_samples: int, read_only: bool = False,
     save_interval: int = 1, patience: float = 24.,
 ) -> Manager:
     r"""Creates a manager for training belief nets.
@@ -20,6 +21,9 @@ def create_manager(
     subject, kappa, num_samples:
         Subject name, cue reliability and number of state samples, see `main`
         for more details.
+    read_only:
+        If ``True``, pre-computed beliefs are not loaded, for fetching purpose
+        only.
     save_interval, patience:
         Arguments of the manager, see `Manager` for more details.
 
@@ -28,11 +32,12 @@ def create_manager(
         STORE_DIR/'belief_nets'/subject, save_interval=save_interval, patience=patience,
     )
     block_ids = get_block_ids(subject, kappa)
-    manager.observations, manager.actions, _, manager.beliefs = zip(*[
-        fetch_beliefs(
-            subject, kappa, num_samples, session_id, block_idx,
-        ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
-    ])
+    if not read_only:
+        manager.observations, manager.actions, _, manager.beliefs = zip(*[
+            fetch_beliefs(
+                subject, kappa, num_samples, session_id, block_idx,
+            ) for session_id, block_idx in tqdm(block_ids, unit='block', leave=False)
+        ])
     manager.default = {
         'subject': subject, 'kappa': kappa, 'num_samples': num_samples,
         'seed': 0, 'model_kw': {get_defaults(NetworkBeliefModel)['z_dim']},
@@ -56,9 +61,9 @@ def create_manager(
         manager.train_kw = {
             'update_kw': config.update_kw, 'init_kw': config.init_kw,
         }
+        _, manager.model = create_env_and_model(subject, kappa, model_kw=manager.model_kw)
         return 1 # one epoch for manager
     def reset():
-        _, manager.model = create_env_and_model(subject, kappa, model_kw=manager.model_kw)
         manager.model.init_net.reset(manager.seed)
         manager.model.update_net.reset(manager.seed)
         manager.stats_u, manager.stats_i = None, None
@@ -84,6 +89,40 @@ def create_manager(
     manager.get_ckpt = get_ckpt
     manager.load_ckpt = load_ckpt
     return manager
+
+
+def fetch_best_net(
+    subject: str, kappa: float, num_samples: int,
+) -> tuple[Config, NetworkBeliefModel]|None:
+    r"""Fetches the best NetworkBeliefModel instance.
+
+    The NetworkBeliefModel object with lowest validation KL divergence of belief
+    update net is considered as the best model.
+
+    Args
+    ----
+    subject, kappa, num_samples:
+        Subject name, cue reliability and number of state samples. See `main`
+        for more details.
+
+    """
+    manager = create_manager(subject, kappa, num_samples, read_only=True)
+    cond = {'subject': subject, 'kappa': kappa, 'num_samples': num_samples}
+    min_loss, best_key = float('inf'), None
+    for key, _ in manager.completed(cond=cond):
+        stats = manager.ckpts[key]['stats_u']
+        losses = (stats['losses_val']*stats['alphas']).sum(axis=1)
+        loss = stats['losses_val'][np.argmin(losses), 0]
+        if loss<min_loss:
+            min_loss = loss
+            best_key = key
+    if best_key is None:
+        print(f"No trained networks found for {subject} (kappa={kappa}, num_samples={num_samples})")
+        return None
+    manager.setup(manager.configs[best_key])
+    manager.load_ckpt(manager.ckpts[best_key])
+    model = manager.model
+    return manager.configs[best_key], model
 
 
 def main(
