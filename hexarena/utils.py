@@ -346,7 +346,7 @@ class ProgressBarCallback(_ProgressBarCallback):
         self.gamma = gamma
         self.reward = None # reward rate
         self.food = None # frequency of getting food
-        self.logs = []
+        self.logs: list[tuple[float, float]] = []
 
     def _on_step(self) -> bool:
         reward = np.mean(self.locals['rewards'])

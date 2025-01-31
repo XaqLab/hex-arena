@@ -149,7 +149,7 @@ class ForagingEnv(Env):
             x.set_state([state[i] for i in range(idx, idx+state_dim)])
             idx += state_dim
 
-    def reset(self, seed: int|None = None) -> tuple[Observation, dict]:
+    def reset(self, seed: int|None = None, options: dict|None = None) -> tuple[Observation, dict]:
         r"""Resets environment.
 
         Random number generator is reset according to `seed`, and linked to `rng`
