@@ -2,9 +2,11 @@
 from pathlib import Path
 from gymnasium.wrappers import TimeLimit
 from stable_baselines3 import PPO
+import numpy as np
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
 from jarvis.utils import tqdm, get_defaults, tensor2array, array2tensor
+from irc.utils.train import exp_fit
 
 from .. import STORE_DIR
 from ..env import ForagingEnv
@@ -96,6 +98,13 @@ def create_manager(
             )
         manager.algo.policy.set_training_mode(False)
     def get_ckpt():
+        if len(manager.logs)>=NUM_UPDATES:
+            rewards, _ = np.array(manager.logs).T
+            _, optimality, _ = exp_fit(
+                np.arange(len(rewards), dtype=float), rewards, ascending=True,
+            )
+        else:
+            optimality = np.nan
         return tensor2array({
             'policy': manager.algo.policy.state_dict(),
             'logs': manager.logs,
@@ -104,6 +113,7 @@ def create_manager(
             'env_state': manager.env.get_state(),
             'known': manager.model.known,
             'belief': manager.model.belief,
+            'optimality': optimality,
         })
     def load_ckpt(ckpt) -> int:
         ckpt = array2tensor(ckpt, manager.algo.device)
