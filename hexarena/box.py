@@ -555,6 +555,7 @@ class GammaLinearBox(BaseFoodBox):
     def set_state(self, state: BoxState) -> None:
         r"""Sets box state."""
         self.interval, self.timer = self._idx2sub(state[0])
+        self.render()
 
     def render(self) -> None:
         cue = self.timer/self.interval # color cue marks the progress towards reward
