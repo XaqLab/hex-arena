@@ -283,7 +283,7 @@ class Monkey:
             reward -= self.push_cost
         return reward
 
-    def look(self, colors: Array) -> int:
+    def look(self, colors: Array) -> tuple[float, float]:
         r"""Returns the observation when looking at a color cue array.
 
         Args
@@ -293,9 +293,9 @@ class Monkey:
 
         Returns
         -------
-        observation:
-            An integer in [0, num_grades), indicating the circular mean color on
-            a random patch.
+        x, y:
+            2D representation of circular mean of a random crop of `colors`, in
+            range [-1, 1].
 
         """
         H, W = colors.shape
@@ -304,7 +304,6 @@ class Monkey:
         i = self.rng.choice(H-h)
         j = self.rng.choice(W-h)
         vals = colors[i:i+h, j:j+w]
-        xs, ys = np.cos(2*np.pi*vals), np.sin(2*np.pi*vals)
-        val = np.mod(np.arctan2(ys.mean(), xs.mean())/(2*np.pi), 1)
-        observation = int(np.floor(val*self.num_grades))
-        return observation
+        x = np.cos(2*np.pi*vals).mean()
+        y = np.sin(2*np.pi*vals).mean()
+        return x, y
