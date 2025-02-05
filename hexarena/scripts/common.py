@@ -100,6 +100,6 @@ def create_env_and_model(
     env = SimilarBoxForagingEnv(**env_kw)
     model = SamplingBeliefModel(env, **model_kw)
     if subject=='viktor':
-        model.train_kw.update({'num_epochs': 20})
-        model.estimate_kw.update({'sga_kw.num_epochs': 300})
+        model.train_kw.update({'num_epochs': 60})
+        model.estimate_kw.update({'sga_kw.num_epochs': 200})
     return env, model
