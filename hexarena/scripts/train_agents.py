@@ -158,7 +158,7 @@ def main(
     num_epochs, num_works, max_errors:
         Arguments for batch processing, see `Manager.batch` for more details.
     kwargs:
-        Keyword arguments of the manager, see `Manager` for more details.
+        Keyword arguments of the manager, see `create_manager` for more details.
 
     """
     manager = create_manager(subject, kappa, num_samples, **kwargs)
