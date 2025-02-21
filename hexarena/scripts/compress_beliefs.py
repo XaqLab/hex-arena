@@ -126,7 +126,7 @@ def create_manager(
 def fetch_best_vae(
     subject: str, kappa: float, num_samples: int, z_dim: int,
     min_epoch: int = 20, cond: dict|None = None,
-) -> BaseDistributionNet|None:
+) -> tuple[Config, BaseDistributionNet]:
     r"""Fetches the best belief VAE satisfying conditions.
 
     Args
@@ -164,12 +164,13 @@ def fetch_best_vae(
             min_loss = loss
             best_key = key
     if best_key is None:
-        print(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
-        return None
-    manager.setup(manager.configs[best_key], read_only=True)
-    manager.load_ckpt(manager.ckpts[best_key])
+        raise RuntimeError(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
+    config = manager.configs[best_key]
+    manager.setup(config, read_only=True)
     belief_vae = manager.belief_vae
-    return belief_vae
+    ckpt = array2tensor(manager.ckpts[best_key])
+    belief_vae.load_state_dict(ckpt['best_state'])
+    return config, belief_vae
 
 
 def main(
