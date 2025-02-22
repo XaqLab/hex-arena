@@ -97,7 +97,7 @@ def create_manager(
         with torch.no_grad():
             _, _, recons = manager.belief_vae(beliefs_test)
         kl_losses, _ = zip(*[
-            manager.belief_vae.p_x.kl_divergence(recons[i], beliefs_test[i])
+            manager.belief_vae.p_x.kl_divergence(beliefs_test[i], recons[i])
             for i in range(len(recons))
         ])
         manager.losses['test'].append(torch.stack(kl_losses).mean().item())
@@ -203,7 +203,7 @@ def main(
     manager = create_manager(subject, kappa, num_samples, **kwargs)
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
-            'z_dim': list(range(12)),
+            'z_dim': list(range(1, 11)),
             'seed': list(range(6)),
             'regress_kw.z_reg': [1., 0.1, 0.01],
         })
