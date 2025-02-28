@@ -553,28 +553,30 @@ class ForagingEnv(Env):
                 p_max = np.nanmax(p_boxes)
             h_boxes = []
             for i, ax in enumerate(axes):
-                h_boxes.append(ax.imshow(
-                    p_boxes[i], aspect=self.boxes[i].num_levels/4, origin='lower',
-                    vmin=0, vmax=p_max, cmap='Reds',
-                ))
-                ax.set_xticks([0, self.boxes[i].num_levels-1])
+                n_levels = self.boxes[i].num_levels
+                for k in range(2):
+                    h, = ax.plot(
+                        (np.arange(n_levels)+0.5)/n_levels, p_boxes[i, k],
+                        color='blue' if k==0 else 'red',
+                    )
+                    h_boxes.append(h)
+                ax.set_xticks([0.5/n_levels, (n_levels-0.5)/n_levels])
                 if i==self.num_boxes-1:
                     ax.set_xticklabels(['min', 'max'])
-                    ax.set_xlabel('Cue level', labelpad=-10)
+                    ax.set_xlabel('Color cue', labelpad=-10)
                 else:
-                    ax.spines['bottom'].set_visible(False)
                     ax.set_xticklabels([])
-                ax.set_yticks([0, 1])
-                ax.set_yticklabels(
-                    ['Empty', 'Food'], fontsize='xx-small',
-                    rotation=90, va='center',
-                )
+                ax.set_ylim([-0.01, 1.05*p_max])
                 ax.set_ylabel('Box {}'.format(i+1))
+            ax = axes[0]
+            ax.set_title('Belief')
+            ax.legend(h_boxes[:2], ['No food', 'With food'], loc='upper center', fontsize='x-small')
             artists = h_boxes
         else:
             h_boxes = artists
             for i in range(self.num_boxes):
-                h_boxes[i].set_data(p_boxes[i])
+                for k in range(2):
+                    h_boxes[2*i+k].set_ydata(p_boxes[i, k])
         return artists
 
     def play_episode(self,
@@ -649,13 +651,10 @@ class ForagingEnv(Env):
             h = (0.8-(n-1)*gap)/n
             axes = []
             for i in range(n):
-                axes.append(fig.add_axes([0.55, 0.1+(n-i-1)*(h+gap), 0.35, h]))
+                axes.append(fig.add_axes([0.6, 0.1+(n-i-1)*(h+gap), 0.35, h]))
             artists_b = self.plot_beliefs(
                 axes, p_boxes[tmin], p_max=p_boxes[tmin:tmax].max(),
             )
-            cbar = plt.colorbar(artists_b[-1], ax=axes, fraction=1/8)
-            cbar.set_label(r'$P_\mathrm{box}$')
-            cbar.ax.locator_params(nbins=5)
 
         def update(t, artists_a, artists_b):
             artists_a = self.plot_arena(
