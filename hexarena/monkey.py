@@ -39,7 +39,7 @@ class Monkey:
     def __init__(self,
         arena: Arena|dict|None = None,
         num_grades: int = 8,
-        integrate_area: float = 0.5,
+        integrate_area: float = 0.8,
         push_cost: float = 1.,
         turn_price: float = 0.001,
         move_price: float = 0.,

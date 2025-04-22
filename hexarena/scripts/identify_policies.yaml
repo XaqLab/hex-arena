@@ -1,10 +1,10 @@
 apiVersion: batch/v1 # Jobs Default K8 API
 kind: Job # This tells kubernetes what kind of class it is working with
 metadata:
-  name: marco-a10-hmp # Name of the Job
+  name: marco-1k-010-hmp3 # Name of the Job
 spec:
-  completions: 100
-  parallelism: 40
+  completions: 8
+  parallelism: 8
   template: # Pod Templete
     metadata:
       labels:
@@ -12,7 +12,7 @@ spec:
     spec:
       restartPolicy: Never # Options are OnFailure, and Never.
       hostNetwork: true # This option will allow the pod to use the host network for internet access
-      priorityClassName: # Set the pod to be low priority meaning it will be evicted by default and higher priority pods
+      priorityClassName: low-priority # Set the pod to be low priority meaning it will be evicted by default and higher priority pods
       volumes:
       - name: dshm
         emptyDir:
@@ -23,7 +23,7 @@ spec:
           path: /mnt/scratch09/zhe/hex-arena/data # Directory on the host machine to be mounted
       - name: store
         hostPath:
-          path: /mnt/scratch09/zhe/hex-arena/store
+          path: /mnt/scratch09/zhe/hex-arena/store_Jan2025
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -38,8 +38,10 @@ spec:
               - key: kubernetes.io/hostname # Target label is gpu_mem_size
                 operator: NotIn # Key must have one of the following values
                 values:
+                - at-gencompute002
                 - at-compute006 # calcium imaging
                 - at-compute015 # light bead microscopy
+                - at-mlflow
       containers: # Container Level
       - name: hex-arena # Container name
         image: at-docker.stanford.edu:5000/zhe-hexarena
@@ -59,4 +61,9 @@ spec:
         - name: store
           mountPath: /hex-arena/store
         command: ["/bin/bash"] # Entry point for the container
-        args: ["-c", "python -u identify_policies.py subject=marco max_wait=10 num_works=6 choices='hmp_spec_A10.yaml' num_macros=10"] # sh commands to clone and run python script
+        args:
+          - "-c"
+          - >
+            python -u -m hexarena.scripts.identify_policies
+            subject=marco kappa=0.1 num_samples=1000 z_dim=3
+            num_epochs=40 max_wait=10

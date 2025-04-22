@@ -97,7 +97,7 @@ def create_manager(
         with torch.no_grad():
             _, _, recons = manager.belief_vae(beliefs_test)
         kl_losses, _ = zip(*[
-            manager.belief_vae.p_x.kl_divergence(recons[i], beliefs_test[i])
+            manager.belief_vae.p_x.kl_divergence(beliefs_test[i], recons[i])
             for i in range(len(recons))
         ])
         manager.losses['test'].append(torch.stack(kl_losses).mean().item())
@@ -126,7 +126,7 @@ def create_manager(
 def fetch_best_vae(
     subject: str, kappa: float, num_samples: int, z_dim: int,
     min_epoch: int = 20, cond: dict|None = None,
-) -> BaseDistributionNet|None:
+) -> tuple[Config, BaseDistributionNet]:
     r"""Fetches the best belief VAE satisfying conditions.
 
     Args
@@ -164,12 +164,13 @@ def fetch_best_vae(
             min_loss = loss
             best_key = key
     if best_key is None:
-        print(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
-        return None
-    manager.setup(manager.configs[best_key], read_only=True)
-    manager.load_ckpt(manager.ckpts[best_key])
+        raise RuntimeError(f"No VAE satisfying conditions found (kappa {kappa}, z_dim {z_dim}).")
+    config = manager.configs[best_key]
+    manager.setup(config, read_only=True)
     belief_vae = manager.belief_vae
-    return belief_vae
+    ckpt = array2tensor(manager.ckpts[best_key])
+    belief_vae.load_state_dict(ckpt['best_state'])
+    return config, belief_vae
 
 
 def main(
@@ -202,7 +203,7 @@ def main(
     manager = create_manager(subject, kappa, num_samples, **kwargs)
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
-            'z_dim': list(range(12)),
+            'z_dim': list(range(1, 11)),
             'seed': list(range(6)),
             'regress_kw.z_reg': [1., 0.1, 0.01],
         })
