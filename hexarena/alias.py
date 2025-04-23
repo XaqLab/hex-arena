@@ -1,3 +1,5 @@
+from typing import TypeVar
+
 from numpy import ndarray as Array
 from numpy.random import Generator as RandGen
 
@@ -11,8 +13,4 @@ from matplotlib.animation import Animation
 from collections.abc import Sequence
 
 EnvParam = Sequence[float]
-BoxObservation = Sequence[Sequence[int]]
-BoxState = tuple[int, int]
-MonkeyState = tuple[int, int]
-State = Sequence[int]
-Observation = Sequence[int]
+EnvState = Sequence[int|float]
