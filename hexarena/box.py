@@ -1,14 +1,7 @@
 import numpy as np
-import torch
-from scipy import stats
 from gymnasium.spaces import Discrete, Box, Dict
-from irc.dist.space import DiscreteVarSpace
-from irc.dist.embedder import BaseEmbedder
-from irc.model import SamplingBeliefModel
 
-from collections.abc import Sequence
-
-from .alias import Array, Tensor, EnvParam, EnvState
+from .alias import Array, EnvParam
 from .color import get_cue_array
 
 
@@ -33,6 +26,8 @@ class BaseFoodBox:
     cue: float # scalar in [0, 1) to generate color array
     colors: Array # a 2D float array of shape (height, width)
     param_names: list[str] # list of parameter names
+
+    pos: int # position on arena
 
     def __init__(self,
         *,
@@ -326,6 +321,11 @@ class GammaBox(BaseFoodBox):
         r"""Returns food state based on current timer and level."""
         return self.timer>=self.drawn
 
+    @property
+    def cue(self) -> float:
+        r"""Returns cue value based on current timer and level."""
+        return min(self.timer/self.drawn, 1.)
+
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='tau':
             val, low, high = [self.scale*self.shape], [0], [np.inf]
@@ -350,8 +350,7 @@ class GammaBox(BaseFoodBox):
         self.render()
 
     def render(self) -> None:
-        cue = min(self.timer/self.drawn, 1) # linear cue for the progress towards reward
-        self.colors = self.get_colors(cue)
+        self.colors = self.get_colors(self.cue)
 
     def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""

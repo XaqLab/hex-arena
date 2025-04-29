@@ -13,4 +13,3 @@ from matplotlib.animation import Animation
 from collections.abc import Sequence
 
 EnvParam = Sequence[float]
-EnvState = Sequence[int|float]

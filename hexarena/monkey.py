@@ -4,7 +4,7 @@ from gymnasium.spaces import Discrete, MultiDiscrete
 from jarvis.config import Config
 
 from .arena import Arena
-from .alias import EnvParam, MonkeyState, Array
+from .alias import Array, EnvParam
 
 class Monkey:
     r"""Class for the monkey in an arena.
@@ -13,8 +13,6 @@ class Monkey:
     ----
     arena:
         The arena in which the monkey plays in.
-    num_grades:
-        Number of distinct colors the agent perceives.
     integrate_area:
         A number in (0, 1] specifying the size of visual field for integrating
         color cues. For example `integrate_area=0.5` means a random patch of
@@ -38,7 +36,6 @@ class Monkey:
 
     def __init__(self,
         arena: Arena|dict|None = None,
-        num_grades: int = 8,
         integrate_area: float = 0.8,
         push_cost: float = 1.,
         turn_price: float = 0.001,
@@ -51,7 +48,6 @@ class Monkey:
             arena._target_ = 'hexarena.arena.Arena'
             arena = arena.instantiate()
         self.arena: Arena = arena
-        self.num_grades = num_grades
         self.integrate_area = integrate_area
         self.push_cost = push_cost
         self.turn_price = turn_price
@@ -73,7 +69,6 @@ class Monkey:
     def spec(self) -> dict:
         return {
             '_target_': 'hexarena.monkey.Monkey',
-            'num_grades': self.num_grades,
             'integrate_area': self.integrate_area,
             'push_cost': self.push_cost,
             'turn_price': self.turn_price,
@@ -109,12 +104,12 @@ class Monkey:
         param_high = [np.inf, np.inf, np.inf, np.inf, np.inf]
         return param_low, param_high
 
-    def get_state(self) -> MonkeyState:
+    def get_state(self) -> tuple[int, int]:
         r"""Returns monkey state."""
         state = (self.pos, self.gaze)
         return state
 
-    def set_state(self, state: MonkeyState) -> None:
+    def set_state(self, state: tuple[int, int]) -> None:
         r"""Sets the monkey state."""
         self.pos, self.gaze = state
 
@@ -152,6 +147,7 @@ class Monkey:
             An integer in [0, num_tiles) for the desired tile of looking at.
 
         """
+        action = int(action)
         if action<self.arena.num_tiles**2:
             push = False
             move = action//self.arena.num_tiles
@@ -207,11 +203,10 @@ class Monkey:
             Sequence of macro actions.
 
         """
-        assert self.arena.num_boxes==3 and num_macros in [10, 22], (
-            f"`num_macros={num_macros}` is not supported"
-        )
-        if num_macros==22:
-            assert self.arena.num_tiles==19
+        if not (self.arena.num_tiles==19 and self.arena.num_boxes==3):
+            raise NotImplementedError("Only works on the arena with 'resol=2'")
+        if num_macros not in [10, 22]:
+            raise NotImplementedError(f"`num_macros={num_macros}` is not supported")
         macros = []
         for action in actions:
             push, move, _ = self.convert_action(action) # `look` is ignored
@@ -219,7 +214,6 @@ class Monkey:
                 if push:
                     macro = self.arena.boxes.index(move) # [0, 3) for push actions
                 else:
-                    assert self.arena.num_tiles==19, "Only 19-tile environment is supported"
                     if move in [1, 2, 7, 8, 9]: # near box 0
                         macro = 3
                     if move in [3, 4, 11, 12, 13]: # near box 1
@@ -238,7 +232,7 @@ class Monkey:
                 if push:
                     macro = self.arena.boxes.index(move)
                 else:
-                    macro = 3+move
+                    macro = 3+move # move to each tile is considered separately
             macros.append(macro)
         return macros
 
@@ -304,6 +298,6 @@ class Monkey:
         i = self.rng.choice(H-h)
         j = self.rng.choice(W-h)
         vals = colors[i:i+h, j:j+w]
-        x = np.cos(2*np.pi*vals).mean()
-        y = np.sin(2*np.pi*vals).mean()
+        x = np.cos(2*np.pi*vals).mean().item()
+        y = np.sin(2*np.pi*vals).mean().item()
         return x, y
