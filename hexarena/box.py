@@ -23,7 +23,7 @@ class BaseFoodBox:
     """
 
     food: bool # food availability
-    cue: float # scalar in [0, 1) to generate color array
+    cue: float # scalar in [0, 1] to generate color array
     colors: Array # a 2D float array of shape (height, width)
     param_names: list[str] # list of parameter names
 
@@ -122,15 +122,15 @@ class BaseFoodBox:
             high += [*_high]
         return low, high
 
-    def get_state(self) -> tuple[int, float]:
+    def get_state(self) -> dict[str, int|float]:
         r"""Returns box state."""
-        state = (int(self.food), self.cue)
+        state = {'food': int(self.food), 'cue': self.cue}
         return state
 
-    def set_state(self, state: tuple[int, float]) -> None:
+    def set_state(self, state: dict[str, int|float]) -> None:
         r"""Sets box state."""
-        self.food = bool(state[0])
-        self.cue = state[1]
+        self.food = bool(state['food'])
+        self.cue = float(state['cue'])
         self.render()
 
     def get_colors(self, cue: float) -> Array:
@@ -261,7 +261,7 @@ class PoissonBox(BaseFoodBox):
         if push:
             self._reset()
         else:
-            gamma = np.exp(-self.dt/self.tau)
+            gamma = np.exp(-self.dt/self.tau).item()
             self.cue = 1-(1-self.cue)*gamma
             p_appear = 1-gamma
             if self.rng.random()<p_appear:
@@ -340,13 +340,15 @@ class GammaBox(BaseFoodBox):
         else:
             super()._set_param(name, val)
 
-    def get_state(self) -> tuple[float, float]:
+    def get_state(self) -> dict[str, float]:
         r"""Returns box state."""
-        return self.drawn, self.timer
+        state = {'drawn': self.drawn, 'timer': self.timer}
+        return state
 
-    def set_state(self, state: tuple[float, float]) -> None:
+    def set_state(self, state: dict[str, float]) -> None:
         r"""Sets box state."""
-        self.drawn, self.timer = state
+        self.drawn = state['drawn']
+        self.timer = state['timer']
         self.render()
 
     def render(self) -> None:

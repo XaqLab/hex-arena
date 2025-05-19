@@ -70,18 +70,22 @@ class ForagingEnv(Env):
             box.pos = self.arena.boxes[i]
             self.boxes.append(box)
 
-        # state: (*monkey_state, *boxes_state)
-        _s_space = {'monkey': self.monkey.state_space}
-        for i in range(self.num_boxes):
-            _s_space[f'box_{i}'] = self.boxes[i].state_space
-        self.state_space = Dict(_s_space)
-        # observation: (*monkey_state, *seen_color, rewarded)
-        _o_space = {
-            'monkey': self.monkey.state_space,
+        self.agt_space = self.monkey.state_space
+        self.env_space = Dict({
+            f'box_{i}': self.boxes[i].state_space for i in range(self.num_boxes)
+        })
+        self.obs_space = Dict({
             'color': Box(-np.inf, np.inf, shape=(2,)),
             'rewarded': Discrete(2),
-        }
-        self.observation_space = Dict(_o_space)
+        })
+        # state: (*monkey_state, *boxes_state)
+        self.state_space = Dict({
+            'monkey': self.agt_space, **self.env_space,
+        })
+        # observation: (*monkey_state, *seen_color, rewarded)
+        self.observation_space = Dict({
+            'monkey': self.agt_space, **self.obs_space,
+        })
         # action: (push, move, look)
         self.action_space = self.monkey.action_space
 
@@ -135,8 +139,11 @@ class ForagingEnv(Env):
         for x in self._components():
             x.rng = self.rng
             x.reset()
-        observation = self._get_observation(False)
-        info = self._get_info()
+        astate = self._get_astate()
+        estate = self._get_estate()
+        obs = self._get_obs(False)
+        observation = {'monkey': astate, **obs}
+        info = self._get_info(astate, estate, obs)
         return observation, info
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
@@ -148,12 +155,24 @@ class ForagingEnv(Env):
             _reward = box.step(push and move==box.pos)
             reward += _reward
             rewarded |= _reward>0
-        observation = self._get_observation(rewarded)
-        info = self._get_info()
+        astate = self.monkey.get_state()
+        estate = self._get_estate()
+        obs = self._get_obs(rewarded)
+        observation = {'monkey': astate, **obs}
+        info = self._get_info(astate, estate, obs)
         return observation, reward, terminated, truncated, info
 
-    def _get_observation(self, rewarded: bool) -> dict:
-        r"""Returns observation.
+    def _get_astate(self) -> tuple[int, int]:
+        return self.monkey.get_state()
+
+    def _get_estate(self) -> dict:
+        r"""Returns state of environment."""
+        return {
+            f'box_{i}': self.boxes[i].get_state() for i in range(self.num_boxes)
+        }
+
+    def _get_obs(self, rewarded: bool) -> dict:
+        r"""Returns observation of environment.
 
         The monkey has full knowledge of its own state, a color observation from
         the box it is looking at, and whether reward is provided. When the
@@ -162,19 +181,16 @@ class ForagingEnv(Env):
 
         """
         box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
-        observation = {
-            'monkey': self.monkey.get_state(),
+        obs = {
             'color': (0., 0.) if box is None else self.monkey.look(box.colors),
             'rewarded': int(rewarded),
         }
-        return observation
+        return obs
 
-    def _get_info(self) -> dict:
+    def _get_info(self, astate: tuple[int, int], estate: dict, obs: dict) -> dict:
         r"""Returns information about environment."""
         info = {
-            'pos': self.monkey.pos, 'gaze': self.monkey.gaze,
-            'foods': np.array([box.food for box in self.boxes], dtype=bool),
-            'cues': np.array([box.cue for box in self.boxes], dtype=float),
+            'agt': astate, 'estate': estate, 'obs': obs,
             'colors': np.stack([box.colors for box in self.boxes]),
         }
         return info

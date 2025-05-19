@@ -349,8 +349,8 @@ class ProgressBarCallback(_ProgressBarCallback):
         self.logs: list[tuple[float, float]] = []
 
     def _on_step(self) -> bool:
-        reward = np.mean(self.locals['rewards'])
-        food = np.mean([info['observation'][-1] for info in self.locals['infos']])
+        reward = np.mean(self.locals['rewards']).item()
+        food = np.mean([float(info['obs']['rewarded']) for info in self.locals['infos']]).item()
         self.reward = reward if self.reward is None else self.gamma*self.reward+(1-self.gamma)*reward
         self.food = food if self.food is None else self.gamma*self.food+(1-self.gamma)*food
         if self.n_calls%self.disp_freq==0:
