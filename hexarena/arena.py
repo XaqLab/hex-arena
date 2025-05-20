@@ -46,7 +46,7 @@ class Arena:
             r = i/self.resol
             for j in range(6):
                 theta = j/6*(2*np.pi)
-                x0, y0 = r*np.cos(theta), r*np.sin(theta)
+                x0, y0 = r*np.cos(theta).item(), r*np.sin(theta).item()
                 theta += 2*np.pi/3
                 for k in range(i):
                     t_idx = len(anchors)
@@ -58,8 +58,8 @@ class Arena:
                             self.boxes.append(t_idx)
                     else:
                         self.inners.append(t_idx)
-                    x = x0+k/self.resol*np.cos(theta)
-                    y = y0+k/self.resol*np.sin(theta)
+                    x = x0+k/self.resol*np.cos(theta).item()
+                    y = y0+k/self.resol*np.sin(theta).item()
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
