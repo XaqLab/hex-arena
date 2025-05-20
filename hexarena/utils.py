@@ -327,35 +327,17 @@ def align_monkey_data(block_data: dict) -> dict:
 class ProgressBarCallback(_ProgressBarCallback):
     r"""Callback for update progress bar with recent running statistics."""
 
-    def __init__(self,
-        pbar, disp_freq: int = 128,
-        gamma: float|None = None,
-    ):
-        r"""
-        Args
-        ----
-        pbar, disp_freq:
-            See `irc.utils.ProgressBarCallback` for more details.
-        gamma:
-            Decay factor for computing running average.
-
-        """
-        super().__init__(pbar, disp_freq)
-        if gamma is None:
-            gamma = 0.5**(1/self.disp_freq)
-        self.gamma = gamma
-        self.reward = None # reward rate
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.food = None # frequency of getting food
-        self.logs: list[tuple[float, float]] = []
+
+    def _update_logs(self) -> None:
+        self.logs.append((self.reward, self.food))
+
+    def _get_pbar_desc(self) -> str:
+        return super()._get_pbar_desc()+"[Food {:.2f}]".format(self.food)
 
     def _on_step(self) -> bool:
-        reward = np.mean(self.locals['rewards']).item()
         food = np.mean([float(info['obs']['rewarded']) for info in self.locals['infos']]).item()
-        self.reward = reward if self.reward is None else self.gamma*self.reward+(1-self.gamma)*reward
         self.food = food if self.food is None else self.gamma*self.food+(1-self.gamma)*food
-        if self.n_calls%self.disp_freq==0:
-            self.pbar.set_description(
-                "[Reward {:.2f}], [Food {:.2f}]".format(self.reward, self.food)
-            )
-            self.logs.append((self.reward, self.food))
         return super()._on_step()
