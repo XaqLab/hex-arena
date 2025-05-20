@@ -100,6 +100,50 @@ class ForagingEnv(Env):
         r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes
 
+    def _get_astate(self) -> tuple[int, int]:
+        return self.monkey.get_state()
+
+    def _get_estate(self) -> dict:
+        r"""Returns state of environment."""
+        return {
+            f'box_{i}': self.boxes[i].get_state() for i in range(self.num_boxes)
+        }
+
+    def _get_obs(self, rewarded: bool) -> dict:
+        r"""Returns observation of environment.
+
+        The monkey has full knowledge of its own state, a color observation from
+        the box it is looking at, and whether reward is provided. When the
+        monkey is not looking at any box, color observation `(0, 0)` will be
+        returned instead.
+
+        """
+        box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
+        obs = {
+            'color': (0., 0.) if box is None else self.monkey.look(box.colors),
+            'rewarded': int(rewarded),
+        }
+        return obs
+
+    def _get_info(self, astate: tuple[int, int], estate: dict, obs: dict) -> dict:
+        r"""Returns information about environment."""
+        info = {
+            'agt': astate, 'estate': estate, 'obs': obs,
+            'colors': np.stack([box.colors for box in self.boxes]),
+        }
+        return info
+
+    def get_state(self) -> dict:
+        return {
+            'monkey': self._get_astate(),
+            **self._get_estate(),
+        }
+
+    def set_state(self, state: dict) -> None:
+        self.monkey.set_state(state['monkey'])
+        for i in range(self.num_boxes):
+            self.boxes[i].set_state(state[f'box_{i}'])
+
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
         param = [self.time_cost]
@@ -161,39 +205,6 @@ class ForagingEnv(Env):
         observation = {'monkey': astate, **obs}
         info = self._get_info(astate, estate, obs)
         return observation, reward, terminated, truncated, info
-
-    def _get_astate(self) -> tuple[int, int]:
-        return self.monkey.get_state()
-
-    def _get_estate(self) -> dict:
-        r"""Returns state of environment."""
-        return {
-            f'box_{i}': self.boxes[i].get_state() for i in range(self.num_boxes)
-        }
-
-    def _get_obs(self, rewarded: bool) -> dict:
-        r"""Returns observation of environment.
-
-        The monkey has full knowledge of its own state, a color observation from
-        the box it is looking at, and whether reward is provided. When the
-        monkey is not looking at any box, color observation `(0, 0)` will be
-        returned instead.
-
-        """
-        box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
-        obs = {
-            'color': (0., 0.) if box is None else self.monkey.look(box.colors),
-            'rewarded': int(rewarded),
-        }
-        return obs
-
-    def _get_info(self, astate: tuple[int, int], estate: dict, obs: dict) -> dict:
-        r"""Returns information about environment."""
-        info = {
-            'agt': astate, 'estate': estate, 'obs': obs,
-            'colors': np.stack([box.colors for box in self.boxes]),
-        }
-        return info
 
     def convert_experiment_data(self, block_data: dict, arena_radius=1860.) -> dict:
         r"""Converts raw experiment data to discrete values.
