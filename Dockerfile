@@ -1,5 +1,5 @@
-FROM zheli21/pytorch:2.4.1-cp311-cuda124-2204 AS base
-RUN pip install -U stable-baselines3 h5py
+FROM zheli21/pytorch:2.6.0-cp311-cuda118-2204 AS base
+RUN pip install -U stable-baselines3 sb3-contrib h5py
 
 FROM base AS git-repos
 RUN mkdir /root/.ssh/
@@ -8,7 +8,7 @@ RUN touch /root/.ssh/known_hosts
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
 RUN git clone git@github.com:lizhe07/jarvis.git
 RUN git clone -b 0.4 git@github.com:XaqLab/irc-gym.git
-RUN git clone git@github.com:XaqLab/hex-arena.git
+RUN git clone -b conti_color git@github.com:XaqLab/hex-arena.git
 
 FROM base AS final
 COPY --from=git-repos /jarvis /jarvis
