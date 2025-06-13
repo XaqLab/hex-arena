@@ -1,0 +1,11 @@
+# Directory of monkey foraging raw data, will use the first one that exists.
+# Relative path will be interpreted as to the root of repository
+data_dirs:
+  - 'data'
+  - '/mnt/c/Projects.Data/foraging/from.Panos_Jun2024'
+  - '/mnt/d/Projects.Data/foraging/from.Panos_Jun2024'
+# Directory of analysis results, will use the first one that exists. If none of
+# the folders exist, a new directory will be created for the first item.
+store_dirs:
+  - 'store'
+  - '/mnt/d/WSL.Store/foraging'
