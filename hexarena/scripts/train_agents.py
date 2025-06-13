@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from jarvis.config import from_cli, choices2configs, Config
 from irc.agent.train import create_manager

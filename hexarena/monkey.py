@@ -6,6 +6,7 @@ from jarvis.config import Config
 from .arena import Arena
 from .alias import Array, EnvParam
 
+
 class Monkey:
     r"""Class for the monkey in an arena.
 

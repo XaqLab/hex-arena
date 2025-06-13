@@ -100,14 +100,20 @@ class ForagingEnv(Env):
         r"""Returns a list of environment components."""
         return [self.monkey]+self.boxes
 
-    def _get_astate(self) -> tuple[int, int]:
+    def get_agt_state(self) -> tuple[int, int]:
         return self.monkey.get_state()
 
-    def _get_estate(self) -> dict:
-        r"""Returns state of environment."""
+    def set_agt_state(self, state: tuple[int, int]) -> None:
+        self.monkey.set_state(state)
+
+    def get_env_state(self) -> dict:
         return {
             f'box_{i}': self.boxes[i].get_state() for i in range(self.num_boxes)
         }
+
+    def set_env_state(self, state: dict) -> None:
+        for i in range(self.num_boxes):
+            self.boxes[i].set_state(state[f'box_{i}'])
 
     def _get_obs(self, rewarded: bool) -> dict:
         r"""Returns observation of environment.
@@ -117,6 +123,19 @@ class ForagingEnv(Env):
         monkey is not looking at any box, color observation `(0, 0)` will be
         returned instead.
 
+        Args
+        ----
+        rewarded:
+            Whether the monkey is rewarded at the current time step.
+
+        Returns
+        -------
+        obs:
+            A dictionary with keys
+            - 'color': circular coordinates of seen color, see `Monkey.look` for
+            more details.
+            - 'rewarded': binary variable of whether rewarded or not.
+
         """
         box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
         obs = {
@@ -125,24 +144,43 @@ class ForagingEnv(Env):
         }
         return obs
 
-    def _get_info(self, astate: tuple[int, int], estate: dict, obs: dict) -> dict:
-        r"""Returns information about environment."""
+    def _get_observation_and_info(self, rewarded: bool) -> tuple[dict, dict]:
+        r"""Returns observation and info for Gymnasium API.
+
+        The method should be called at the end of `reset` or `step`.
+
+        Args
+        ----
+        rewarded:
+            Whether the monkey is rewarded, see `_get_obs` for more details.
+
+        Returns
+        -------
+        observation:
+            The observation combining both monkey state and its observation on
+            the environment.
+            - 'monkey': monkey state, see `Monkey.get_state` for more details.
+            - 'color': seen color, see `_get_obs` for more details.
+            - 'rewarded': rewarded condition, see `_get_obs` for more details.
+        info:
+            A dictionary containing POMDP related information, with keys:
+            - 'agt_state': the monkey state.
+            - 'env_state': the states of food boxes, see `get_env_state` for
+            more details.
+            - 'obs': observation of environment, see `_get_obs` for more details.
+            - 'colors': array of shape `(n_boxes, h, w)` for color patterns on
+            all boxes.
+
+        """
+        agt_state = self.get_agt_state()
+        env_state = self.get_env_state()
+        obs = self._get_obs(rewarded) # no push at reset
+        observation = {'monkey': agt_state, **obs}
         info = {
-            'agt': astate, 'estate': estate, 'obs': obs,
+            'agt_state': agt_state, 'env_state': env_state, 'obs': obs,
             'colors': np.stack([box.colors for box in self.boxes]),
         }
-        return info
-
-    def get_state(self) -> dict:
-        return {
-            'monkey': self._get_astate(),
-            **self._get_estate(),
-        }
-
-    def set_state(self, state: dict) -> None:
-        self.monkey.set_state(state['monkey'])
-        for i in range(self.num_boxes):
-            self.boxes[i].set_state(state[f'box_{i}'])
+        return observation, info
 
     def get_param(self) -> EnvParam:
         r"""Returns environment parameters."""
@@ -183,11 +221,7 @@ class ForagingEnv(Env):
         for x in self._components():
             x.rng = self.rng
             x.reset()
-        astate = self._get_astate()
-        estate = self._get_estate()
-        obs = self._get_obs(False)
-        observation = {'monkey': astate, **obs}
-        info = self._get_info(astate, estate, obs)
+        observation, info = self._get_observation_and_info(False)
         return observation, info
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
@@ -199,11 +233,7 @@ class ForagingEnv(Env):
             _reward = box.step(push and move==box.pos)
             reward += _reward
             rewarded |= _reward>0
-        astate = self.monkey.get_state()
-        estate = self._get_estate()
-        obs = self._get_obs(rewarded)
-        observation = {'monkey': astate, **obs}
-        info = self._get_info(astate, estate, obs)
+        observation, info = self._get_observation_and_info(rewarded)
         return observation, reward, terminated, truncated, info
 
     def convert_experiment_data(self, block_data: dict, arena_radius=1860.) -> dict:
