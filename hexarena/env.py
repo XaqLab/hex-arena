@@ -797,8 +797,7 @@ class SimilarBoxForagingEnv(ForagingEnv):
             A dictionary specifying shared parameters of boxes.
 
         """
-        raise NotImplementedError
-        box = Config(box).fill({'_target_': 'hexarena.box.StationaryBox'})
+        box = Config(box).fill({'_target_': 'hexarena.box.PoissonBox'})
         if kwargs.get('boxes') is None:
             kwargs['boxes'] = [box]
         else:
