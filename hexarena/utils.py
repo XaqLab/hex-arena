@@ -82,7 +82,7 @@ def get_valid_blocks(
                 duration = toc-tic
                 if duration<min_duration:
                     continue
-                meta = {'duration': np.round(duration*1000)/1000} # precision 1 ms
+                meta = {'duration': np.round(duration*1000).item()/1000} # precision 1 ms
 
                 block = f[blocks['continuous'][b_idx][0]]
                 t = np.array(block['t']).squeeze()
@@ -92,14 +92,14 @@ def get_valid_blocks(
                 pos_xyz = np.array(block['position']).squeeze()
                 if pos_xyz.shape==(len(t), 3):
                     pos_xyz = pos_xyz[mask]
-                    pos_ratio = 1-np.any(np.isnan(pos_xyz[:, :2]), axis=1).mean()
+                    pos_ratio = 1-np.any(np.isnan(pos_xyz[:, :2]), axis=1).mean().item()
                 else:
                     pos_ratio = 0.
                 meta.update({'pos_ratio': pos_ratio})
                 gaze_xyz = np.array(block['eyeArenaInt']).squeeze()
                 if gaze_xyz.shape==(len(t), 3):
                     gaze_xyz = gaze_xyz[mask]
-                    gaze_ratio = 1-np.any(np.isnan(gaze_xyz[:, :2]), axis=1).mean()
+                    gaze_ratio = 1-np.any(np.isnan(gaze_xyz[:, :2]), axis=1).mean().item()
                 else:
                     gaze_ratio = 0.
                 meta.update({'gaze_ratio': gaze_ratio})
@@ -110,7 +110,7 @@ def get_valid_blocks(
                 pushes = np.array(block['tPush']['all'], dtype=float).squeeze()
                 flags = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
                 meta.update({
-                    'push': len(pushes), 'reward': np.sum(flags),
+                    'push': len(pushes), 'reward': np.sum(flags).item(),
                 })
                 if meta['push']<min_push or meta['reward']<min_reward:
                     continue
@@ -123,7 +123,7 @@ def get_valid_blocks(
                 taus = np.array(block['schedules']).squeeze()
                 if np.any(np.isnan(taus)):
                     continue
-                gamma = np.array(block['gammaShape'])[0, 0]
+                gamma = np.array(block['gammaShape'])[0, 0].item()
                 if gamma==1. and set(taus)!=set([15., 21., 35.]):
                     continue
                 if gamma==10. and set(taus)!=set([7., 14., 21.]):
@@ -132,35 +132,6 @@ def get_valid_blocks(
 
                 block_infos[(session_id, b_idx)] = meta
     return block_infos
-
-
-def _infer_slope(t, cues):
-    r"""Infers slope of linear probability cue.
-
-    Args
-    ----
-    t: (num_steps)
-        Time stamps of each sample, monotonically increasing.
-    cues: (num_steps)
-        Color cues that linearly increases from 0 after each box push.
-
-    Returns
-    -------
-    t_draws: (num_steps)
-        Drawn time intervals after each push. Each entry corresponds to the
-        latest push.
-
-    """
-    idxs, = np.nonzero(np.diff(cues)<0)
-    idxs = np.concatenate([[0], idxs+1, [len(t)]])
-    t_draws = np.empty(t.shape, dtype=float)
-    for i in range(len(idxs)-1):
-        _t = t[idxs[i]:idxs[i+1]]
-        _cues = cues[idxs[i]:idxs[i+1]]
-        mask = _cues<1
-        t_draw = np.polyfit(_cues[mask], _t[mask], 1)[0]
-        t_draws[idxs[i]:idxs[i+1]] = t_draw
-    return t_draws
 
 
 def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
@@ -185,19 +156,21 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
     block_data:
         A dictionary containing raw data, time unit is 'sec' and space unit is
         `mm`. It contains keys:
-        - `t`: (num_steps,). Time axis of the block.
-        - `pos_xyz`: (num_steps, 3). 3D coordinates of the monkey position.
-        - `gaze_xyz`: (num_steps, 3). 3D coordinates of the monkey gaze.
-        - `cues`: (num_steps, 3). Color cue values for three boxes, ordered as
+        - `t`: `(n_steps,)`. Time axis of the block.
+        - `pos_xyz`: `(n_steps, 3)`. 3D coordinates of the monkey position.
+        - `head_xyz`: `(n_steps, 3)`. Unit vectors of head direction.
+        - `eye_h`: `(n_steps,)`. Horizontal eye position, in degrees.
+        - `eye_v`: `(n_steps,)`. Vertical eye position, in degrees.
+        - `gaze_xyz`: `(n_steps, 3)`. 3D coordinates of the monkey gaze.
+        - `cues`: `(n_steps, 3)`. Color cue values for three boxes, ordered as
         'northeast' (0), 'northwest' (1), 'south' (2).
-        - `push_t`: (num_events,). Time of push events.
-        - `push_idx`: (num_events,). Box index of each push, in [0, 3).
-        - `push_flag`: (num_events,). Whether a reward is obtained of each push.
+        - `push_t`: `(n_pushes,)`. Time of push events.
+        - `push_idx`: `(n_pushes,)`. Box index of each push, in [0, 3).
+        - `push_flag`: `(n_pushes,)`. Whether a reward is obtained of each push.
         - `gamma_shape`: The shape parameter of Gamma distribution, `1.` means
         exponential distribution.
-        - `kappas`: (3,). Noise level of each box.
-        - `taus`: (3,). Time constants of exponential distribution of reward
-            intervals.
+        - `kappas`: `(3,)`. Noise level of each box.
+        - `taus`: `(3,)`. Expectation of drawn intervals.
         - `intervals`: list of 1D array. The reward intervals at pushes of each
         boxes. In `gamma_shape==10` experiments, the initial reward interval is
         included, while in `gamma_shape==1` experiments, the first interval is
@@ -222,6 +195,9 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         block_data['t'] = np.array(block['t']).squeeze()
         mask = block_data['t']<=duration
         block_data['pos_xyz'] = np.array(block['position']).squeeze()
+        block_data['head_xyz'] = np.array(block['headDirVec']).squeeze()
+        block_data['eye_h'] = np.array(block['eyeH']).squeeze()
+        block_data['eye_v'] = np.array(block['eyeV']).squeeze()
         block_data['gaze_xyz'] = np.array(block['eyeArenaInt']).squeeze()
         for key in ['pos_xyz', 'gaze_xyz']:
             if block_data[key].shape==(len(block_data['t']), 3):
@@ -273,12 +249,13 @@ def align_monkey_data(block_data: dict) -> dict:
         xy = np.matmul(xy, t)
         return xy
     tau_2, tau_1, tau_0 = np.sort(block_data['taus'])
+    keys = ['pos_xyz', 'head_xyz', 'gaze_xyz']
     if tuple(block_data['taus'])==(tau_0, tau_1, tau_2):
         # no change
         new_order = [0, 1, 2]
     if tuple(block_data['taus'])==(tau_0, tau_2, tau_1):
         # flip along 30 deg axis, box 0->0, 1->2, 2->1
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in keys:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, np.pi/3)
             xy[:, 0] = -xy[:, 0]
@@ -287,28 +264,28 @@ def align_monkey_data(block_data: dict) -> dict:
         new_order = [0, 2, 1]
     if tuple(block_data['taus'])==(tau_1, tau_0, tau_2):
         # flip along y axis, box 0->1, 1->0, 2->2
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in keys:
             xy = block_data[key][:, :2]
             xy[:, 0] = -xy[:, 0]
             block_data[key][:, :2] = xy
         new_order = [1, 0, 2]
     if tuple(block_data['taus'])==(tau_1, tau_2, tau_0):
         # rotate 120 deg, box 0->1, 1->2, 2->0
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in keys:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, 2*np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [2, 0, 1]
     if tuple(block_data['taus'])==(tau_2, tau_0, tau_1):
         # to rotate -120 deg, box 0->2, 1->0, 2->1
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in keys:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, -2*np.pi/3)
             block_data[key][:, :2] = xy
         new_order = [1, 2, 0]
     if tuple(block_data['taus'])==(tau_2, tau_1, tau_0):
         # flip along -30 deg axis, box 0->2, 1->1, 2->0
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in keys:
             xy = block_data[key][:, :2]
             xy = rot_xy(xy, -np.pi/3)
             xy[:, 0] = -xy[:, 0]
