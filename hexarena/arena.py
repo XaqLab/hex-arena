@@ -195,8 +195,9 @@ class Arena:
         """
         cbar_kw = Config(cbar_kw).fill({
             'fraction': 0.1, 'shrink': 0.8, 'pad': 0.05,
-            'orientation': 'horizontal', 'location': 'top',
+            'orientation': 'horizontal', 'location': 'bottom', 'disable': False,
         })
+        disable_pbar = cbar_kw.pop('disable')
         vals = np.array(vals)
         assert len(vals)==self.num_tiles
         assert np.all(vals>=0)
@@ -209,9 +210,10 @@ class Arena:
             h_tiles = []
             for i in range(self.num_tiles):
                 h_tiles.append(self.plot_tile(ax, i, cmap(norm(vals[i]))))
-            plt.colorbar(
-                mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
-            )
+            if not disable_pbar:
+                plt.colorbar(
+                    mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
+                )
         else:
             assert len(h_tiles)==self.num_tiles
             for i in range(self.num_tiles):

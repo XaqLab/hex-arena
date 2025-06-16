@@ -196,14 +196,19 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         mask = block_data['t']<=duration
         block_data['pos_xyz'] = np.array(block['position']).squeeze()
         block_data['head_xyz'] = np.array(block['headDirVec']).squeeze()
-        block_data['eye_h'] = np.array(block['eyeH']).squeeze()
-        block_data['eye_v'] = np.array(block['eyeV']).squeeze()
         block_data['gaze_xyz'] = np.array(block['eyeArenaInt']).squeeze()
-        for key in ['pos_xyz', 'gaze_xyz']:
+        for key in ['pos_xyz', 'head_xyz', 'gaze_xyz']:
             if block_data[key].shape==(len(block_data['t']), 3):
                 block_data[key] = block_data[key][mask]
             else:
                 block_data[key] = np.full((mask.sum(), 3), fill_value=np.nan)
+        block_data['eye_h'] = np.array(block['eyeH']).squeeze()
+        block_data['eye_v'] = np.array(block['eyeV']).squeeze()
+        for key in ['eye_h', 'eye_v']:
+            if block_data[key].shape==(len(block_data['t'],)):
+                block_data[key] = block_data[key][mask]
+            else:
+                block_data[key] = np.full((mask.sum(),), fill_value=np.nan)
         block_data['t'] = block_data['t'][mask]
         block_data['cues'] = np.stack([
             np.array(block['visualCueSignal'][f'box{i}']).squeeze() for i in [2, 3, 1]
@@ -228,20 +233,16 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
     return block_data
 
 
-def align_monkey_data(block_data: dict) -> dict:
+def align_monkey_data(block_data: dict) -> None:
     r"""Rotates and flips data in space to have a fixed box order.
 
     Args
     ----
     block_data:
-        Data directly read from mat file using `load_monkey_data`.
-
-    Returns
-    -------
-    block_data:
-        All information regarding spatial coordinates and box identity is
-        properly transformed so that box 0 has the slowest rate (tau=35.) and
-        box 2 has the fastest (tau=15.).
+        Data directly read from mat file using `load_monkey_data`. All
+        information regarding spatial coordinates and box identity will be
+        properly transformed so that box 0 is the worst box (e.g. tau=35) and
+        box 2 is the best (e.g. tau=15).
 
     """
     def rot_xy(xy, theta):
@@ -298,7 +299,6 @@ def align_monkey_data(block_data: dict) -> dict:
     block_data['push_idx'] = push_idx
     block_data['cues'] = block_data['cues'][:, new_order]
     block_data['taus'] = block_data['taus'][new_order]
-    return block_data
 
 
 class ProgressBarCallback(_ProgressBarCallback):

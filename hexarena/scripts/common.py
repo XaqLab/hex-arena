@@ -6,7 +6,7 @@ from ..utils import get_valid_blocks
 
 
 GAMMAS = { # default shape parameter of schedule distribution
-    'marco': 1., 'viktor': 10.,
+    'marco': 1., 'dylan': 1., 'viktor': 10.,
 }
 
 def get_block_ids(

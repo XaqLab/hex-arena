@@ -266,11 +266,24 @@ class ForagingEnv(Env):
                 Colors on the food boxes.
 
         """
-        raise NotImplementedError
         t = block_data['t']
         num_steps = int(np.floor(t.max()/self.dt))-1
 
         def get_trajectory(xyz):
+            r"""Extracts 2D trajectories as in tile indices.
+
+            Args
+            ----
+            xyz: (n_stamps, 3), float
+                Raw 3D coordinates in mm with time stamps marked in `t`.
+
+            Returns
+            -------
+            vals: (n_steps,), int
+                Tile indices at each time step of size `self.dt`. '-1' for
+                missing data.
+
+            """
             xy = xyz[:, :2]/arena_radius
             vals = []
             for i in range(num_steps+1):
