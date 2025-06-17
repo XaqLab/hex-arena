@@ -299,6 +299,7 @@ def align_monkey_data(block_data: dict) -> None:
     block_data['push_idx'] = push_idx
     block_data['cues'] = block_data['cues'][:, new_order]
     block_data['taus'] = block_data['taus'][new_order]
+    block_data['intervals'] = [block_data['intervals'][i] for i in new_order]
 
 
 class ProgressBarCallback(_ProgressBarCallback):
