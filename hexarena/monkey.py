@@ -306,7 +306,7 @@ class Monkey:
         h = int(np.ceil(self.integrate_area*H))
         w = int(np.ceil(self.integrate_area*W))
         i = self.rng.choice(H-h)
-        j = self.rng.choice(W-h)
+        j = self.rng.choice(W-w)
         vals = colors[i:i+h, j:j+w]
         x = np.cos(2*np.pi*vals).mean().item()
         y = np.sin(2*np.pi*vals).mean().item()
