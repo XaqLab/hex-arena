@@ -34,7 +34,7 @@ class BaseFoodBox:
         dt: float = 1.,
         reward: float = 10.,
         kappa: float = 0.1,
-        resol: tuple[int, int] = (128, 128),
+        resol: tuple[int, int] = (128, 96),
     ):
         self.dt = dt
         self.reward = reward
