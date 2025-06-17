@@ -115,7 +115,7 @@ class Arena:
                         for l in range(-1 if k==0 else 0, 3):
                             append_seg(x, y, theta+l*np.pi/3)
         for segment in segments:
-            ax.plot(segment[0], segment[1], color='silver', linestyle='--', linewidth=0.5)
+            ax.plot(segment[0], segment[1], color='silver', linestyle='--', linewidth=1/self.resol)
 
         ax.set_xlim([-1.1, 1.1])
         ax.set_ylim([-1.1, 1.1])
@@ -165,6 +165,7 @@ class Arena:
     def plot_map(self,
         ax: Axes,
         vals: Array,
+        door: bool = False,
         cmap: str = 'YlOrBr',
         vmin: float = 0,
         vmax: float|None = None,
@@ -205,6 +206,16 @@ class Arena:
         if vmax is None:
             vmax = vals.max()
         self.plot_mesh(ax)
+        if door:
+            x = [np.cos(np.pi/3), 1]
+            y = [-np.sin(np.pi/3), 0]
+            p = 0.35
+            ax.plot(
+                [(1-p)*x[0]+p*x[1], p*x[0]+(1-p)*x[1]],
+                [(1-p)*y[0]+p*y[1], p*y[0]+(1-p)*y[1]],
+                color='dimgray', linewidth=5,
+            )
+
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         if h_tiles is None:
             h_tiles = []
