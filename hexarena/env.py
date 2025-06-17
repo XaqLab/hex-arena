@@ -422,7 +422,7 @@ class ForagingEnv(Env):
     def _count_pushes(self,
         push: Array, rewarded: Array,
     ) -> Array:
-        r"""Counts total and successful pushes for all boxes.
+        r"""Counts successful and total pushes for all boxes.
 
         Args
         ----
@@ -436,16 +436,16 @@ class ForagingEnv(Env):
         Returns
         -------
         counts: int, `(num_steps+1, num_boxes, 2)`
-            `counts[..., 0]` is the counts of total pushes for each box.
-            `counts[..., 1]` is the counts of successful pushes for each box.
+            `counts[..., 0]` is the counts of successful pushes for each box.
+            `counts[..., 1]` is the counts of total pushes for each box.
 
         """
         num_steps = len(push)
         counts = np.zeros((num_steps+1, self.num_boxes, 2), dtype=int)
         for t in range(num_steps):
-            if push[t]>=0: # total count
-                counts[t+1, push[t], 0] = counts[t, push[t], 0]+1
             if rewarded[t+1]: # successful count
+                counts[t+1, push[t], 0] = counts[t, push[t], 0]+1
+            if push[t]>=0: # total count
                 counts[t+1, push[t], 1] = counts[t, push[t], 1]+1
         return counts
 
