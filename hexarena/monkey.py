@@ -18,8 +18,13 @@ class Monkey:
         A number in (0, 1] specifying the size of visual field for integrating
         color cues. For example `integrate_area=0.5` means a random patch of
         size 0.5x0.5 on the monitor is integrated to get the mean color.
+    time_cost:
+        Cost of each time step. Usually non-negative to encourage engagement.
     push_cost:
         Cost of pushing the button to open the food box.
+    center_cost:
+        Cost for staying at the center. Stay cost of othe tiles decreases
+        linearly to 0 towards arena corner.
     turn_price:
         Price of turning, in units of 1/deg. It will be multiplied by the
         turning angle before moving to get turning cost.
@@ -29,20 +34,19 @@ class Monkey:
     look_price:
         Price of looking, in units of 1/deg. It will be multiplied by the
         turning angle after moving to get looking cost.
-    center_cost:
-        Cost for staying at the center. Stay cost of othe tiles decreases
-        linearly to 0 towards arena corner.
 
     """
 
     def __init__(self,
         arena: Arena|dict|None = None,
+        *,
         integrate_area: float = 0.8,
+        time_cost: float = 0.,
         push_cost: float = 1.,
+        center_cost: float = 0.1,
         turn_price: float = 0.001,
         move_price: float = 0.,
         look_price: float = 0.001,
-        center_cost: float = 0.1,
     ):
         if arena is None or isinstance(arena, dict):
             arena = Config(arena)
@@ -50,11 +54,12 @@ class Monkey:
             arena = arena.instantiate()
         self.arena: Arena = arena
         self.integrate_area = integrate_area
+        self.time_cost = time_cost
         self.push_cost = push_cost
+        self.center_cost = center_cost
         self.turn_price = turn_price
         self.move_price = move_price
         self.look_price = look_price
-        self.center_cost = center_cost
 
         # state: (pos, gaze)
         self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
@@ -92,17 +97,21 @@ class Monkey:
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
-        param = [self.push_cost, self.turn_price, self.move_price, self.look_price, self.center_cost]
+        param = [
+            self.time_cost, self.push_cost, self.center_cost,
+            self.turn_price, self.move_price, self.look_price,
+        ]
         return param
 
     def set_param(self, param) -> None:
         r"""Sets monkey parameters."""
-        self.push_cost, self.turn_price, self.move_price, self.look_price, self.center_cost = param
+        self.time_cost, self.push_cost, self.center_cost = param[:3]
+        self.turn_price, self.move_price, self.look_price = param[3:]
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
-        # param: (push_cost, turn_price, move_price, look_price, center_cost)
-        param_low = [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf]
-        param_high = [np.inf, np.inf, np.inf, np.inf, np.inf]
+        # param: (time_cost, push_cost, center_cost, turn_price, move_price, look_price)
+        param_low = [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf]
+        param_high = [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf]
         return param_low, param_high
 
     def get_state(self) -> tuple[int, int]:
@@ -252,7 +261,7 @@ class Monkey:
             move cost, look cost and push cost.
 
         """
-        reward = 0.
+        reward = -self.time_cost
         # turn cost
         phi = self._direction(self.gaze, self.pos) # face direction
         theta = self._direction(move, self.pos) # moving direction
