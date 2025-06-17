@@ -5,6 +5,7 @@ import numpy as np
 from irc.utils import ProgressBarCallback as _ProgressBarCallback
 
 from . import DATA_DIR
+from .alias import Array
 
 def get_data_pth(subject: str) -> Path:
     r"""Returns mat file path.
@@ -300,6 +301,59 @@ def align_monkey_data(block_data: dict) -> None:
     block_data['cues'] = block_data['cues'][:, new_order]
     block_data['taus'] = block_data['taus'][new_order]
     block_data['intervals'] = [block_data['intervals'][i] for i in new_order]
+
+
+def get_food_avails(
+    push_t: Array, intervals: Array, num_steps: int, dt: float = 1.,
+    tau: float|None = None, first_rewarded: bool|None = None,
+) -> Array:
+    r"""Returns food availability trace.
+
+    Args
+    ----
+    push_t: float, `(num_pushes,)`.
+        Push time at a single box, in seconds.
+    intervals: float, `(num_pushes,)` or `(num_pushes+1,)`.
+        Drawn intervals after each push. For Gamma distribution of shape 10, the
+        drawn interval at the beginning of the block (before first push) is also
+        provided. For exponential schedule (`gamma_shape==1`), it needs to be
+        guessed based on the outcome of first push.
+    num_steps:
+        Number of time steps.
+    dt:
+        Time step size, in seconds.
+    tau:
+        The expectation of reward intervals for exponential distribution, used
+        for guessing the first drawn interval.
+    first_rewarded:
+        Whether the first push is rewarded, used for guessing the first drawn
+        interval.
+
+    Returns
+    -------
+    foods: bool, `(num_steps,)`
+        Food availability at each time step.
+
+    """
+    n_pushes = len(push_t)
+    if len(intervals)==n_pushes:
+        assert not (tau is None or first_rewarded is None), (
+            "'tau' and 'first_rewarded' needs to be provided to guess the first"
+            "drawn interval"
+        )
+        rng = np.random.default_rng(0)
+        while True:
+            t = rng.gamma(1, tau)
+            if first_rewarded==(t<push_t[0]):
+                break
+        intervals = np.array([t, *intervals])
+    foods = np.full((num_steps+1,), fill_value=True)
+    foods[:int(np.ceil(intervals[0]/dt))] = False
+    for i in range(n_pushes):
+        tic = int(np.ceil(push_t[i]/dt))
+        toc = int(np.ceil((push_t[i]+intervals[i+1])/dt))
+        foods[tic:toc] = False
+    return foods
 
 
 class ProgressBarCallback(_ProgressBarCallback):

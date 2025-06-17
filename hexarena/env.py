@@ -13,6 +13,7 @@ from .monkey import Monkey
 from .box import BaseFoodBox
 from .color import get_cmap
 from .alias import EnvParam, Figure, Axes, Artist, Array
+from .utils import get_food_avails
 
 
 class ForagingEnv(Env):
@@ -284,6 +285,8 @@ class ForagingEnv(Env):
             - `rewarded`: bool, `(num_steps+1,)`. Whether the monkey is rewarded
             or not. The first element is always ``False`` corresponding to the
             environment reset.
+            - `foods`: bool, `(num_steps+1, num_boxes)`. Food availability at
+            each time step for all boxes.
 
         """
         t = block_data['t']
@@ -349,9 +352,23 @@ class ForagingEnv(Env):
         push = np.array(push).astype(int)
         rewarded = np.array(rewarded).astype(bool)
 
+        foods = []
+        for b_idx in range(self.num_boxes):
+            if block_data['gamma_shape']==1:
+                tau = block_data['taus'][b_idx].item()
+                first_rewarded = block_data['push_flag'][block_data['push_idx']==b_idx][0].item()
+            else:
+                tau, first_rewarded = None, None
+            foods.append(get_food_avails(
+                block_data['push_t'][block_data['push_idx']==b_idx],
+                block_data['intervals'][b_idx], num_steps, dt=self.dt,
+                tau=tau, first_rewarded=first_rewarded,
+            ))
+        foods = np.stack(foods, axis=1)
+
         env_data = {
             'pos': pos, 'gaze': gaze, 'colors': colors,
-            'push': push, 'rewarded': rewarded,
+            'push': push, 'rewarded': rewarded, 'foods': foods,
         }
         return env_data
 
@@ -374,14 +391,19 @@ class ForagingEnv(Env):
             `convert_experiment_data`.
 
         """
-        pos, gaze, colors = [], [], []
+        pos, gaze, colors, foods = [], [], [], []
         for info in infos:
             pos.append(info['agt_state'][0])
             gaze.append(info['agt_state'][1])
             colors.append(info['colors'])
+            foods.append([
+                info['env_state'][f'box_{i}']['food']
+                for i in range(self.num_boxes)
+            ])
         pos = np.array(pos).astype(int)
         gaze = np.array(gaze).astype(int)
         colors = np.stack(colors).astype(float)
+        foods = np.stack(foods).astype(bool)
         push = []
         for action in actions:
             _push, _move, _ = self.monkey.convert_action(action)
@@ -393,7 +415,7 @@ class ForagingEnv(Env):
         rewarded = np.array([o['rewarded'] for o in observations]).astype(bool)
         env_data = {
             'pos': pos, 'gaze': gaze, 'colors': colors,
-            'push': push, 'rewarded': rewarded,
+            'push': push, 'rewarded': rewarded, 'foods': foods,
         }
         return env_data
 
@@ -565,12 +587,12 @@ class ForagingEnv(Env):
         pos, gaze:
             Tile index for monkey position and gaze.
         rewarded:
-            Whether a reward was just obtained. The position tile will be
-            colored red if ``True``, blue if ``False``, and yellow if not
-            provided.
-        foods: (num_boxes,)
-            Bool array of food status in each box. If provided, red or blue bars
-            will be plotted.
+            Whether the monkey was rewarded from last action. The position tile
+            will be colored red if ``True``, blue if ``False``, and yellow if
+            ``None``.
+        foods: bool, `(num_boxes,)`
+            Food status in each box. If provided, red (``True``) or blue
+            (``False``) bars will be plotted.
         colors: (num_boxes, height, width)
             Float array of color cues of each box, in [0, 1).
         counts: (num_boxes, 2)
