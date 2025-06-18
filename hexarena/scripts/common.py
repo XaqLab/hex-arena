@@ -1,7 +1,7 @@
 from jarvis.config import Config
 from irc.model import SamplingBeliefModel
 
-from ..env import SimilarBoxForagingEnv
+from ..env import ForagingEnv
 from ..utils import get_valid_blocks
 
 
@@ -51,7 +51,7 @@ def get_block_ids(
 def create_env(
     gamma: float = 1., kappa: float = 0.1,
     env_kw: dict|None = None,
-) -> SimilarBoxForagingEnv:
+) -> ForagingEnv:
     r"""Creates default foraging environment.
 
     Args
@@ -77,21 +77,17 @@ def create_env(
     assert kappa>0, "Cue reliability needs to be positive"
     if gamma==1:
         env_kw = Config(env_kw).fill({
-            'box': {
-                '_target_': 'hexarena.box.PoissonBox',
-                'kappa': kappa,
-            },
-            'boxes': [{'tau': tau} for tau in [35, 21, 15]],
+            'boxes': [{
+                '_target_': 'hexarena.box.PoissonBox', 'kappa': kappa, 'tau': tau,
+            } for tau in [35, 21, 15]],
         })
     if gamma==10:
         env_kw = Config(env_kw).fill({
-            'box': {
-                '_target_': 'hexarena.box.GammaBox',
-                'kappa': kappa,
-            },
-            'boxes': [{'tau': tau} for tau in [21, 14, 7]],
+            'boxes': [{
+                '_target_': 'hexarena.box.GammaBox', 'kappa': kappa, 'tau': tau,
+            } for tau in [21, 14, 7]],
         })
-    env = SimilarBoxForagingEnv(**env_kw)
+    env = ForagingEnv(**env_kw)
     return env
 
 
@@ -99,7 +95,7 @@ def create_env_and_model(
     subject: str, kappa: float = 0.,
     env_kw: dict|None = None,
     model_kw: dict|None = None,
-) -> tuple[SimilarBoxForagingEnv, SamplingBeliefModel]:
+) -> tuple[ForagingEnv, SamplingBeliefModel]:
     r"""Creates default belief model.
 
     Args

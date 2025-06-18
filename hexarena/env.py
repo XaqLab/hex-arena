@@ -276,8 +276,10 @@ class ForagingEnv(Env):
         -------
         env_data:
             A dictionary containing discretized data, with keys:
-            - `pos`: int, `(num_steps+1,)`. Monkey position.
-            - `gaze`: int, `(num_steps+1,)`. Gaze position.
+            - `pos`: int, `(num_steps+1,)`. Monkey position in `[-1, num_tiles)`,
+            with '-1' for missing data.
+            - `gaze`: int, `(num_steps+1,)`. Gaze position in `[-1, num_tiles)`,
+            with '-1' for missing data.
             - `colors`: float, `(num_steps+1, num_boxes, height, width)`. Colors
             on the food boxes.
             - `push`: int, `(num_steps,)`. Index of the box pushed at each time
@@ -443,10 +445,11 @@ class ForagingEnv(Env):
         num_steps = len(push)
         counts = np.zeros((num_steps+1, self.num_boxes, 2), dtype=int)
         for t in range(num_steps):
+            counts[t+1] = counts[t]
             if rewarded[t+1]: # successful count
-                counts[t+1, push[t], 0] = counts[t, push[t], 0]+1
+                counts[t+1, push[t], 0] += 1
             if push[t]>=0: # total count
-                counts[t+1, push[t], 1] = counts[t, push[t], 1]+1
+                counts[t+1, push[t], 1] += 1
         return counts
 
     def extract_observation_action_reward(self, env_data: dict) -> tuple[Array, Array, Array]:
@@ -613,7 +616,6 @@ class ForagingEnv(Env):
             - Texts for push counts.
 
         """
-        raise NotImplementedError
         if rewarded is None:
             tile_color = 'yellow'
         else:
@@ -632,8 +634,8 @@ class ForagingEnv(Env):
             h_pos = self.arena.plot_tile(ax, pos, tile_color)
             h_pos.set_alpha(0.4)
             h_gaze = ax.scatter(
-                *(self.arena.anchors[gaze] if gaze>=0 else (np.nan, np.nan)), s=100,
-                marker='o', edgecolor='none', facecolor='green',
+                *(self.arena.anchors[gaze] if gaze>=0 else (np.nan, np.nan)),
+                s=200/self.arena.resol, marker='o', edgecolor='none', facecolor='green',
             )
             h_foods, h_boxes, h_counts = [], [], []
             for i, box in enumerate(self.boxes):
@@ -644,8 +646,13 @@ class ForagingEnv(Env):
                     color=foods_color[i], linewidth=2, zorder=2,
                 )
                 h_foods.append(h_food)
+                *_, h, w = colors.shape
+                if h>w:
+                    extent = [x-s*w/h, x+s*w/h, y-s, y+s]
+                else:
+                    extent = [x-s, x+s, y-s*h/w, y+s*h/w]
                 h_box = ax.imshow(
-                    colors[i], extent=[x-s, x+s, y-s, y+s], zorder=2,
+                    colors[i], extent=extent, zorder=2,
                     vmin=0, vmax=1, cmap=get_cmap(), interpolation='nearest',
                 )
                 h_boxes.append(h_box)
@@ -728,8 +735,12 @@ class ForagingEnv(Env):
         return artists
 
     def play_episode(self,
-        pos: Array, gaze: Array,
-        rewarded=None, foods=None, colors=None, counts=None, p_boxes=None,
+        pos: Array, gaze: Array|None = None,
+        colors: Array|None = None,
+        push: Array|None = None,
+        rewarded: Array|None = None,
+        foods: Array|None = None,
+        beliefs: Array|None = None,
         tmin: int|None = None, tmax: int|None = None,
         figsize: tuple[float, float]|None = None,
         use_sec: bool = True,
@@ -740,18 +751,11 @@ class ForagingEnv(Env):
 
         Args
         ----
-        pos, gaze: int, (num_steps+1,)
-            Tile index for monkey position and gaze.
-        rewarded: bool|None, (num_steps+1,)
-            Whether the agent is rewarded, ``None`` stands for no push.
-        foods: bool, (num_steps+1, num_boxes)
-            Food status for all boxes.
-        colors: float, (num_steps+1, num_boxes, height, width)
-            Color cues of all boxes, regardless of the monkey gaze.
-        counts: int, (num_steps+1, num_boxes, 2)
-            Push counts since the beginning of the episode.
-        p_boxes: float, (num_steps+1, num_boxes, 2, num_levels)
-            Beliefs about each box.
+        pos, gaze, colors, push, rewarded, foods:
+            Episode data formatted by the environment, see
+            `convert_experiment_data` for more details.
+        beliefs:
+            Beliefs about the environment.
         tmin, tmax:
             Time index range to visualize.
         figsize:
@@ -766,20 +770,36 @@ class ForagingEnv(Env):
             Object of the figure and animation.
 
         """
-        assert len(pos)==len(gaze)
-        rewarded = [None]*len(pos) if rewarded is None else rewarded
-        foods = [None]*len(pos) if foods is None else foods
-        colors = [None]*len(pos) if colors is None else colors
-        counts = [None]*len(pos) if counts is None else counts
-        if p_boxes is not None:
-            assert len(p_boxes)==len(pos)
+        n_steps = len(pos)-1
+        if gaze is None:
+            gaze = np.full((n_steps+1,), fill_value=-1, dtype=int)
+        else:
+            assert gaze.shape==(n_steps+1,)
+        if colors is None:
+            colors = [None]*(n_steps+1)
+        else:
+            assert colors.shape[:2]==(n_steps+1, self.num_boxes)
+        if push is None or rewarded is None:
+            rewarded = [None]*(n_steps+1)
+            counts = [None]*(n_steps+1)
+        else:
+            assert push.shape==(n_steps,) and rewarded.shape==(n_steps+1,)
+            rewarded = [None]+[rewarded[t+1] if push[t]>=0 else None for t in range(n_steps)]
+            counts = self._count_pushes(push, rewarded)
+        if foods is None:
+            foods = [None]*(n_steps+1)
+        else:
+            assert foods.shape==(n_steps+1, self.num_boxes)
+        if beliefs is not None:
+            raise NotImplementedError("Visualization of beliefs not implemented.")
+
         tmin = 0 if tmin is None else tmin
-        tmax = len(pos) if tmax is None else min(tmax, len(pos))
+        tmax = n_steps+1 if tmax is None else min(tmax, n_steps+1)
         if figsize is None:
-            figsize = (4.5, 4) if p_boxes is None else (7.5, 4)
+            figsize = (4.5, 4) if beliefs is None else (7.5, 4)
         fig = plt.figure(figsize=figsize)
 
-        if p_boxes is None:
+        if beliefs is None:
             ax = fig.add_axes([0.1, 0.05, 0.8, 0.9])
         else:
             ax = fig.add_axes([0.05, 0.05, 0.45, 0.9])
@@ -791,7 +811,7 @@ class ForagingEnv(Env):
         )
         h_title = ax.set_title('')
 
-        if p_boxes is None:
+        if beliefs is None:
             artists_b = []
         else:
             n = self.num_boxes
@@ -809,7 +829,8 @@ class ForagingEnv(Env):
                 ax, pos[t], gaze[t], rewarded[t],
                 foods[t], colors[t], counts[t], artists_a,
             )
-            if p_boxes is not None:
+            if beliefs is not None:
+                raise NotImplementedError
                 artists_b = self.plot_beliefs(
                     axes, p_boxes[t], artists=artists_b,
                 )

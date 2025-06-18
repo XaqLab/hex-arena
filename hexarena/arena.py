@@ -134,7 +134,8 @@ class Arena:
         ax:
             Axis to plot on.
         tile_idx:
-            Index of tile to color, in [0, num_tiles).
+            Index of tile to color, in `[-1, num_tiles)` with '-1' for missing
+            data.
         color:
             The desired tile color.
         size:
