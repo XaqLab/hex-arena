@@ -9,33 +9,36 @@ from matplotlib.animation import FuncAnimation
 from collections.abc import Sequence
 
 from .arena import Arena
-from .monkey import Monkey
+from .monkey import BaseMonkey, ArenaMonkey
 from .box import BaseFoodBox
 from .color import get_cmap
 from .alias import EnvParam, Figure, Axes, Artist, Array
 from .utils import get_food_avails
 
 
-class ForagingEnv(Env):
-    r"""Foraging environment with food boxes in a hexagonal arena.
+class BaseForagingEnv(Env):
+    r"""Base class for a foraging environment with multiple boxes.
+
+    The environment contains multiple boxes each with its own dynamics, the
+    monkey needs to push the button to open a box for food and possibly afer
+    observing the color cue on boxes.
 
     Args
     ----
-    arena, monkey:
-        The arena and monkey.
+    monkey:
+        Monkey instance or a dictionary to specify one.
     boxes:
-        Food boxes.
-    time_cost:
-        Cost for each time step.
+        The food boxes or a list of dictionaries to specify them.
     dt:
-        Time step in unit of second.
+        Time step size, in seconds.
+    shared_param_names:
+        Shared parameter names of boxes, this reduces the number of parameters
+        of the environment.
 
     """
 
     def __init__(self,
-        *,
-        arena: Arena|dict|None = None,
-        monkey: Monkey|dict|None = None,
+        monkey: BaseMonkey|dict|None = None,
         boxes: list[BaseFoodBox|dict|None]|None = None,
         dt: float = 1.,
         shared_param_names: list[str]|None = None,
@@ -45,24 +48,15 @@ class ForagingEnv(Env):
             shared_param_names = ['kappa']
         self.shared_param_names = shared_param_names
 
-        if isinstance(arena, Arena):
-            self.arena = arena
-        else:
-            arena = Config(arena).fill({'_target_': 'hexarena.arena.Arena'})
-            self.arena: Arena = arena.instantiate()
-
-        if isinstance(monkey, Monkey):
+        if isinstance(monkey, BaseMonkey):
             self.monkey = monkey
         else:
-            monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.Monkey'})
-            self.monkey: Monkey = monkey.instantiate(arena=self.arena)
+            monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.BaseMonkey'})
+            self.monkey: BaseMonkey = monkey.instantiate()
 
-        self.num_boxes = self.arena.num_boxes
+        self.num_boxes = 3 if boxes is None else len(boxes)
         if boxes is None:
             boxes = [None]*self.num_boxes
-        elif len(boxes)==1:
-            boxes *= self.num_boxes
-        assert len(boxes)==self.num_boxes
         self.boxes: list[BaseFoodBox] = []
         for i in range(self.num_boxes):
             if isinstance(boxes[i], BaseFoodBox):
@@ -71,38 +65,20 @@ class ForagingEnv(Env):
                 box = Config(boxes[i]).fill({'_target_': 'hexarena.box.PoissonBox'})
                 box: BaseFoodBox = box.instantiate()
             box.dt = self.dt
-            box.pos = self.arena.boxes[i]
             self.boxes.append(box)
 
         self.agt_space = self.monkey.state_space
         self.env_space = Dict({
             f'box_{i}': self.boxes[i].state_space for i in range(self.num_boxes)
         })
-        self.obs_space = Dict({
-            'color': Box(-np.inf, np.inf, shape=(2,)),
-            'rewarded': Discrete(2),
-        })
-        # state: (*monkey_state, *boxes_state)
-        self.state_space = Dict({
-            'monkey': self.agt_space, **self.env_space,
-        })
-        # observation: (*monkey_state, *seen_color, rewarded)
-        self.observation_space = Dict({
-            'monkey': self.agt_space, **self.obs_space,
-        })
-        # action: (push, move, look)
-        self.action_space = self.monkey.action_space
-
+        self.obs_space: Dict = {'rewarded': Discrete(2)}
         self.rng = np.random.default_rng()
 
-    def __repr__(self) -> str:
-        a_str = str(self.arena)
-        a_str = a_str[0].lower()+a_str[1:]
-        return "Foraging in {} (time step {:.2g} sec)".format(a_str, self.dt)
-
-    def _components(self) -> list[Monkey|BaseFoodBox]:
-        r"""Returns a list of environment components."""
-        return [self.monkey]+self.boxes
+    @property
+    def observation_space(self) -> Dict:
+        return Dict({
+            **self.agt_space, **self.obs_space,
+        })
 
     def get_agt_state(self) -> tuple[int, int]:
         return self.monkey.get_state()
@@ -119,13 +95,8 @@ class ForagingEnv(Env):
         for i in range(self.num_boxes):
             self.boxes[i].set_state(state[f'box_{i}'])
 
-    def _get_obs(self, rewarded: bool) -> dict:
+    def get_obs(self, rewarded: bool) -> dict:
         r"""Returns observation of environment.
-
-        The monkey has full knowledge of its own state, a color observation from
-        the box it is looking at, and whether reward is provided. When the
-        monkey is not looking at any box, color observation `(0, 0)` will be
-        returned instead.
 
         Args
         ----
@@ -135,17 +106,11 @@ class ForagingEnv(Env):
         Returns
         -------
         obs:
-            A dictionary with keys
-            - 'color': circular coordinates of seen color, see `Monkey.look` for
-            more details.
+            A dictionary with keys:
             - 'rewarded': binary variable of whether rewarded or not.
 
         """
-        box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
-        obs = {
-            'color': (0., 0.) if box is None else self.monkey.look(box.colors),
-            'rewarded': int(rewarded),
-        }
+        obs = {'rewarded': int(rewarded)}
         return obs
 
     def _get_observation_and_info(self, rewarded: bool) -> tuple[dict, dict]:
@@ -156,30 +121,28 @@ class ForagingEnv(Env):
         Args
         ----
         rewarded:
-            Whether the monkey is rewarded, see `_get_obs` for more details.
+            Whether the monkey is rewarded, see `get_obs` for more details.
 
         Returns
         -------
         observation:
             The observation combining both monkey state and its observation on
-            the environment.
-            - 'monkey': monkey state, see `Monkey.get_state` for more details.
-            - 'color': seen color, see `_get_obs` for more details.
-            - 'rewarded': rewarded condition, see `_get_obs` for more details.
+            the environment. See `BaseMonkey.get_state` and `get_obs` for more
+            details.
         info:
             A dictionary containing POMDP related information, with keys:
             - 'agt_state': the monkey state.
             - 'env_state': the states of food boxes, see `get_env_state` for
             more details.
-            - 'obs': observation of environment, see `_get_obs` for more details.
+            - 'obs': observation of environment, see `get_obs` for more details.
             - 'colors': array of shape `(n_boxes, h, w)` for color patterns on
             all boxes.
 
         """
         agt_state = self.get_agt_state()
         env_state = self.get_env_state()
-        obs = self._get_obs(rewarded)
-        observation = {'monkey': agt_state, **obs}
+        obs = self.get_obs(rewarded)
+        observation = {**agt_state, **obs}
         info = {
             'agt_state': agt_state, 'env_state': env_state, 'obs': obs,
             'colors': np.stack([box.colors for box in self.boxes]),
@@ -234,19 +197,102 @@ class ForagingEnv(Env):
         return low, high
 
     def reset(self, seed: int|None = None, options: dict|None = None) -> tuple[dict, dict]:
-        r"""Resets environment.
-
-        Random number generator is reset according to `seed`, and linked to `rng`
-        of each component.
-
-        """
+        r"""Resets environment."""
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        for x in self._components():
-            x.rng = self.rng
-            x.reset()
+        self.monkey.rng = self.rng
+        self.monkey.reset()
+        for box in self.boxes:
+            box.rng = self.rng
+            box.reset()
         observation, info = self._get_observation_and_info(False) # no reward at reset
         return observation, info
+
+    def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
+        raise NotImplementedError
+
+
+class BanditForagingEnv(BaseForagingEnv):
+    r"""Foraging environment similar to multi-armed bandit problem.
+
+    Spatial and visual aspect of the food boxes are ignored, therefore the
+    monkey only chooses to push one of the boxes or not push at each time step.
+
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.action_space = Discrete(self.num_boxes+1)
+
+    def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
+        reward = self.monkey.step(action<self.num_boxes)
+        rewarded = False
+        for i in range(self.num_boxes):
+            _reward = self.boxes[i].step(action==i)
+            reward += _reward
+            rewarded |= _reward>0
+        observation, info = self._get_observation_and_info(rewarded)
+        return observation, reward, False, False, info
+
+
+class ArenaForagingEnv(BaseForagingEnv):
+    r"""Foraging environment in a hexagonal arena.
+
+    Three food boxes are installed on the walls of a hexagonal arena, and the
+    monkey needs to move inside the arena to get close to one of the boxes. When
+    the monkey looks at one of the box, it gets the color cue of it.
+
+    """
+
+    monkey: ArenaMonkey
+
+    def __init__(self,
+        arena: Arena|dict|None = None,
+        monkey: ArenaMonkey|dict|None = None,
+        **kwargs,
+    ):
+        if isinstance(arena, Arena):
+            self.arena = arena
+        else:
+            arena = Config(arena).fill({'_target_': 'hexarena.arena.Arena'})
+            self.arena: Arena = arena.instantiate()
+
+        if isinstance(monkey, dict) or monkey is None:
+            monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.ArenaMonkey'})
+        monkey.arena = self.arena
+        super().__init__(monkey=monkey, **kwargs)
+        assert self.arena.num_boxes==self.num_boxes
+        for i in range(self.num_boxes):
+            self.boxes[i].pos = self.arena.boxes[i]
+
+        self.obs_space = Dict({
+            'color': Box(-np.inf, np.inf, shape=(2,)),
+            'rewarded': Discrete(2),
+        })
+        self.action_space = self.monkey.action_space
+
+    def get_obs(self, rewarded: bool) -> dict:
+        r"""Returns observation of environment.
+
+        Besides whether it gets rewarded, the monkey gets color observation from
+        the box it is looking at. When the monkey is not looking at any box,
+        color observation `(0, 0)` will be returned instead.
+
+        Returns
+        -------
+        obs:
+            A dictionary with keys:
+            - 'rewarded': binary variable of whether rewarded or not.
+            - 'color': circular coordinates of seen color, see `Monkey.look` for
+            more details.
+
+        """
+        obs = super().get_obs(rewarded)
+        box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
+        obs.update({
+            'color': (0., 0.) if box is None else self.monkey.look(box.colors),
+        })
+        return obs
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
         push, move, look = self.monkey.convert_action(action)
@@ -395,8 +441,8 @@ class ForagingEnv(Env):
         """
         pos, gaze, colors, foods = [], [], [], []
         for info in infos:
-            pos.append(info['agt_state'][0])
-            gaze.append(info['agt_state'][1])
+            pos.append(info['agt_state']['pos'])
+            gaze.append(info['agt_state']['gaze'])
             colors.append(info['colors'])
             foods.append([
                 info['env_state'][f'box_{i}']['food']

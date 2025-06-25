@@ -1,6 +1,6 @@
 import numpy as np
 from collections.abc import Iterable
-from gymnasium.spaces import Discrete, MultiDiscrete
+from gymnasium.spaces import Discrete, MultiDiscrete, Dict
 from jarvis.config import Config
 
 from .arena import Arena
@@ -34,6 +34,8 @@ class BaseMonkey:
         self.time_cost = time_cost
         self.push_cost = push_cost
         self.vis_field = vis_field
+
+        self.state_space = Dict({})
 
     def __str__(self) -> str:
         return "Monkey with push cost {:g}".format(self.push_cost)
@@ -152,11 +154,14 @@ class ArenaMonkey(BaseMonkey):
         self.center_cost = center_cost
 
         # state: (pos, gaze)
-        self.state_space = MultiDiscrete([self.arena.num_tiles]*2)
+        self.state_space = Dict({
+            'pos': Discrete(self.arena.num_tiles),
+            'gaze': Discrete(self.arena.num_tiles),
+        })
         # action: (push, move, look)
         self.action_space = Discrete(self.arena.num_boxes*self.arena.num_tiles+self.arena.num_tiles**2)
 
-        rs = (np.array(self.arena.anchors)**2).sum()**0.5
+        rs = (np.array(self.arena.anchors)**2).sum(axis=1)**0.5
         self.stay_costs = self.center_cost*(1-rs)
         self.rng = np.random.default_rng()
 
@@ -207,14 +212,14 @@ class ArenaMonkey(BaseMonkey):
         param_high += [np.inf, np.inf, np.inf]
         return param_low, param_high
 
-    def get_state(self) -> tuple[int, int]:
+    def get_state(self) -> dict[str, int]:
         r"""Returns monkey state."""
-        state = (self.pos, self.gaze)
+        state = {'pos': self.pos, 'gaze': self.gaze}
         return state
 
-    def set_state(self, state: tuple[int, int]) -> None:
+    def set_state(self, state: dict[str, int]) -> None:
         r"""Sets the monkey state."""
-        self.pos, self.gaze = state
+        self.pos, self.gaze = state['pos'], state['gaze']
 
     def _direction(self, end: int, start: int) -> float|None:
         if end==start:
