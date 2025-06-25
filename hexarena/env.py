@@ -686,19 +686,16 @@ class ArenaForagingEnv(BaseForagingEnv):
             h_foods, h_boxes, h_counts = [], [], []
             for i, box in enumerate(self.boxes):
                 x, y = np.array(self.arena.anchors[box.pos])*1.5
-                s = 0.2
+                *_, h, w = colors.shape
+                s = 0.2 # dimension for color cue
+                dx, dy = min(w/h, 1)*s, min(1, h/w)*s
                 h_food, = ax.plot(
-                    [x-s, x+s], [y+1.2*s, y+1.2*s],
+                    [x-dx, x+dx], [y+1.2*dy, y+1.2*dy],
                     color=foods_color[i], linewidth=2, zorder=2,
                 )
                 h_foods.append(h_food)
-                *_, h, w = colors.shape
-                if h>w:
-                    extent = [x-s*w/h, x+s*w/h, y-s, y+s]
-                else:
-                    extent = [x-s, x+s, y-s*h/w, y+s*h/w]
                 h_box = ax.imshow(
-                    colors[i], extent=extent, zorder=2,
+                    colors[i], extent=[x-dx, x+dx, y-dy, y+dy], zorder=2,
                     vmin=0, vmax=1, cmap=get_cmap(), interpolation='nearest',
                 )
                 h_boxes.append(h_box)
