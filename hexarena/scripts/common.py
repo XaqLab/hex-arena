@@ -1,7 +1,6 @@
-from jarvis.config import Config
-from irc.model import SamplingBeliefModel
+import numpy as np
 
-from ..env import ForagingEnv
+from ..env import BaseForagingEnv, BanditForagingEnv, ArenaForagingEnv
 from ..utils import get_valid_blocks
 
 
@@ -50,8 +49,10 @@ def get_block_ids(
 
 def create_env(
     gamma: float = 1., kappa: float = 0.1,
+    taus: list[float]|None = None,
+    no_arena: bool = False,
     env_kw: dict|None = None,
-) -> ForagingEnv:
+) -> BaseForagingEnv:
     r"""Creates default foraging environment.
 
     Args
@@ -63,96 +64,41 @@ def create_env(
         boxes uses Gamma schedule and linear cue with 'tau' as 21, 14 and 7 secs.
     kappa:
         Cue reliability.
-    env_kw:
-        Additional keyword arguments of environment, see `SimilarBoxForagingEnv`
-        for more details.
+    taus:
+        Schedule parameter of all three boxes. If provided, it needs to be a
+        permutation of the default values.
+    no_arena:
+        Whether the arena is disabled or not. When ``True``, `BanditForagingEnv`
+        will be used.
+    env:
+        Additional keyword arguments of a `BaseForagingEnv` object. It won't
+        overwrite the default specification set by other arguments.
 
     Returns
     -------
-    env:
+    env_kw:
         A default environment with boxes sorted from worst to best.
 
     """
     assert gamma in [1, 10], "Unsupported gamma distribution shape"
     assert kappa>0, "Cue reliability needs to be positive"
     if gamma==1:
-        env_kw = Config(env_kw).fill({
-            'boxes': [{
-                '_target_': 'hexarena.box.PoissonBox', 'kappa': kappa, 'tau': tau,
-            } for tau in [35, 21, 15]],
-        })
+        box = 'hexarena.box.PoissonBox'
+        _taus = [35, 21, 15]
     if gamma==10:
-        env_kw = Config(env_kw).fill({
-            'boxes': [{
-                '_target_': 'hexarena.box.GammaBox', 'kappa': kappa, 'tau': tau,
-            } for tau in [21, 14, 7]],
-        })
-    env = ForagingEnv(**env_kw)
+        box = 'hexarena.box.GammaBox'
+        _taus = [21, 14, 7]
+    if taus is None:
+        taus = _taus
+    else:
+        assert np.all(np.sort(taus)==np.sort(_taus))
+    if no_arena:
+        env_cls = BanditForagingEnv
+    else:
+        env_cls = ArenaForagingEnv
+    env = env_cls(
+        boxes=[{
+            '_target_': box, 'kappa': kappa, 'tau': tau,
+        } for tau in taus], **({} if env_kw is None else env_kw),
+    )
     return env
-
-
-def create_env_and_model(
-    subject: str, kappa: float = 0.,
-    env_kw: dict|None = None,
-    model_kw: dict|None = None,
-) -> tuple[ForagingEnv, SamplingBeliefModel]:
-    r"""Creates default belief model.
-
-    Args
-    ----
-    subject, kappa:
-        Subject name and cue reliability.
-    env_kw:
-        Keyword arguments of the environment.
-    model_kw:
-        Keyword arguments of the belief model.
-
-    Returns
-    -------
-    env:
-        A foraging environment. For 'marco', it is the exponential schedule. For
-        'viktor' it is the Gamma distribution schedule. Color cues are also
-        presented in different ways.
-    model:
-        A sampling-based belief model, with state independence specified.
-
-    """
-    if subject not in ['marco', 'viktor']:
-        raise NotImplementedError("'subject' can only be 'marco' or 'viktor'")
-    if subject=='marco':
-        env_kw = Config(env_kw).fill({
-            'box': {
-                '_target_': 'hexarena.box.StationaryBox',
-                'num_levels': 10,
-            },
-            'boxes': [{'tau': tau} for tau in [35, 21, 15]],
-        })
-        model_kw = Config(model_kw).fill({
-            's_idcs': [[0], [1], [2, 3], [4, 5], [6, 7]],
-        })
-    if subject=='viktor':
-        env_kw = Config(env_kw).fill({
-            'box': {
-                '_target_': 'hexarena.box.GammaLinearBox',
-                'max_interval': 36,
-            },
-            'boxes': [{'tau': tau} for tau in [21, 14, 7]],
-            'monkey': {'num_grades': 48},
-        })
-        model_kw = Config(model_kw).fill({
-            'p_s.phis': [{
-                'embedder._target_': 'hexarena.box.LinearBoxStateEmbedder',
-                'mlp_features': [16, 4],
-            }]*3,
-            'ebd_s': {
-                'ebds': [{'_target_': 'hexarena.box.LinearBoxStateEmbedder'}]*3,
-                'idcs': [[0], [1], [2]],
-            },
-        })
-    env_kw.update({'box.kappa': kappa})
-    env = SimilarBoxForagingEnv(**env_kw)
-    model = SamplingBeliefModel(env, **model_kw)
-    if subject=='viktor':
-        model.train_kw.update({'num_epochs': 60})
-        model.estimate_kw.update({'sga_kw.num_epochs': 200})
-    return env, model
