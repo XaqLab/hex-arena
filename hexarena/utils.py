@@ -31,7 +31,7 @@ def get_valid_blocks(
     min_duration: float = 300.,
     min_pos_ratio: float = 0.,
     min_gaze_ratio: float = 0.,
-    min_push: int = 5,
+    min_push: int = 2,
     min_reward: int = 5,
 ) -> dict[tuple[str, int], dict[str, int|float]]:
     r"""Returns information of valid blocks saved in the mat file.
@@ -108,10 +108,11 @@ def get_valid_blocks(
                     continue
 
                 block = f[blocks['events'][b_idx][0]]
-                pushes = np.array(block['tPush']['all'], dtype=float).squeeze()
+                pushes = np.array(block['tPush']['id'], dtype=int).squeeze()
                 flags = np.array(block['pushLogical']['all'], dtype=bool).squeeze()
                 meta.update({
-                    'push': len(pushes), 'reward': np.sum(flags).item(),
+                    'push': min([(pushes==i).sum().item() for i in range(1, 4)]),
+                    'reward': np.sum(flags).item(),
                 })
                 if meta['push']<min_push or meta['reward']<min_reward:
                     continue
@@ -231,6 +232,9 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         intervals0 = np.array(block['rewardWaitTime']['box2']).squeeze()
         intervals1 = np.array(block['rewardWaitTime']['box3']).squeeze()
         block_data['intervals'] = [intervals0, intervals1, intervals2]
+        for i in range(3):
+            if len(block_data['intervals'][i].shape)==0:
+                block_data['intervals'][i] = block_data['intervals'][i].reshape((1,))
     return block_data
 
 
