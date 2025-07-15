@@ -115,6 +115,12 @@ class BaseMonkey:
         param_high = [np.inf, np.inf]
         return param_low, param_high
 
+    def get_state(self) -> dict:
+        return {}
+
+    def set_state(self, state: dict) -> None:
+        assert state=={}
+
 
 class ArenaMonkey(BaseMonkey):
     r"""Class for the monkey in an arena.

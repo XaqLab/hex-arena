@@ -71,7 +71,7 @@ class BaseForagingEnv(Env):
         self.env_space = Dict({
             f'box_{i}': self.boxes[i].state_space for i in range(self.num_boxes)
         })
-        self.obs_space: Dict = {'rewarded': Discrete(2)}
+        self.obs_space: Dict = Dict({'rewarded': Discrete(2)})
         self.rng = np.random.default_rng()
 
     @property
