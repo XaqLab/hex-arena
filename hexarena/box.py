@@ -124,7 +124,7 @@ class BaseFoodBox:
 
     def get_state(self) -> dict[str, int|float]:
         r"""Returns box state."""
-        state = {'food': int(self.food), 'cue': self.cue}
+        state = {'food': int(self.food), 'cue': np.array([self.cue])}
         return state
 
     def set_state(self, state: dict[str, int|float]) -> None:
