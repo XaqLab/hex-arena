@@ -290,7 +290,9 @@ class ArenaForagingEnv(BaseForagingEnv):
         obs = super().get_obs(rewarded)
         box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
         obs.update({
-            'color': (0., 0.) if box is None else self.monkey.look(box.colors),
+            'color': np.array(
+                (0., 0.) if box is None else self.monkey.look(box.colors)
+            ),
         })
         return obs
 
