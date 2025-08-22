@@ -161,11 +161,11 @@ class ArenaMonkey(BaseMonkey):
 
         # state: (pos, gaze)
         self.state_space = Dict({
-            'pos': Discrete(self.arena.num_tiles),
-            'gaze': Discrete(self.arena.num_tiles),
+            'pos': Discrete(self.arena.n_tiles),
+            'gaze': Discrete(self.arena.n_tiles),
         })
         # action: (push, move, look)
-        self.action_space = Discrete(self.arena.num_boxes*self.arena.num_tiles+self.arena.num_tiles**2)
+        self.action_space = Discrete(self.arena.n_boxes*self.arena.n_tiles+self.arena.n_tiles**2)
 
         rs = (np.array(self.arena.anchors)**2).sum(axis=1)**0.5
         self.stay_costs = self.center_cost*(1-rs)
@@ -196,8 +196,8 @@ class ArenaMonkey(BaseMonkey):
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.pos: int = self.rng.choice(self.arena.num_tiles)
-        self.gaze: int = self.rng.choice(self.arena.num_tiles)
+        self.pos: int = self.rng.choice(self.arena.n_tiles)
+        self.gaze: int = self.rng.choice(self.arena.n_tiles)
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
@@ -262,14 +262,14 @@ class ArenaMonkey(BaseMonkey):
 
         """
         action = int(action)
-        if action<self.arena.num_tiles**2:
+        if action<self.arena.n_tiles**2:
             push = False
-            move = action//self.arena.num_tiles
-            look = action%self.arena.num_tiles
+            move = action//self.arena.n_tiles
+            look = action%self.arena.n_tiles
         else:
             push = True
-            move = self.arena.boxes[(action-self.arena.num_tiles**2)//self.arena.num_tiles]
-            look = (action-self.arena.num_tiles**2)%self.arena.num_tiles
+            move = self.arena.boxes[(action-self.arena.n_tiles**2)//self.arena.n_tiles]
+            look = (action-self.arena.n_tiles**2)%self.arena.n_tiles
         return push, move, look
 
     def index_action(self, push: bool, move: int, look: int) -> int:
@@ -288,9 +288,9 @@ class ArenaMonkey(BaseMonkey):
         """
         if push:
             b_idx = self.arena.boxes.index(move)
-            action = self.arena.num_tiles**2+b_idx*self.arena.num_tiles+look
+            action = self.arena.n_tiles**2+b_idx*self.arena.n_tiles+look
         else:
-            action = move*self.arena.num_tiles+look
+            action = move*self.arena.n_tiles+look
         return action
 
     def merge_actions(self,
@@ -317,7 +317,7 @@ class ArenaMonkey(BaseMonkey):
             Sequence of macro actions.
 
         """
-        if not (self.arena.num_tiles==19 and self.arena.num_boxes==3):
+        if not (self.arena.n_tiles==19 and self.arena.n_boxes==3):
             raise NotImplementedError("Only works on the arena with 'resol=2'")
         if num_macros not in [10, 22]:
             raise NotImplementedError(f"`num_macros={num_macros}` is not supported")

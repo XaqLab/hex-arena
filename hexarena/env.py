@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 from .arena import Arena
 from .monkey import BaseMonkey, ArenaMonkey
-from .box import BaseFoodBox
+from .box import BaseFoodBox, PoissonBox
 from .color import get_cmap
 from .alias import EnvParam, Figure, Axes, Artist, Array
 from .utils import get_food_avails
@@ -54,11 +54,11 @@ class BaseForagingEnv(Env):
             monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.BaseMonkey'})
             self.monkey: BaseMonkey = monkey.instantiate()
 
-        self.num_boxes = 3 if boxes is None else len(boxes)
+        self.n_boxes = 3 if boxes is None else len(boxes)
         if boxes is None:
-            boxes = [None]*self.num_boxes
+            boxes = [None]*self.n_boxes
         self.boxes: list[BaseFoodBox] = []
-        for i in range(self.num_boxes):
+        for i in range(self.n_boxes):
             if isinstance(boxes[i], BaseFoodBox):
                 box = boxes[i]
             else:
@@ -69,7 +69,7 @@ class BaseForagingEnv(Env):
 
         self.agt_space = self.monkey.state_space
         self.env_space = Dict({
-            f'box_{i}': self.boxes[i].state_space for i in range(self.num_boxes)
+            f'box_{i}': self.boxes[i].state_space for i in range(self.n_boxes)
         })
         self.obs_space: Dict = Dict({'rewarded': Discrete(2)})
         self.rng = np.random.default_rng()
@@ -88,11 +88,11 @@ class BaseForagingEnv(Env):
 
     def get_env_state(self) -> dict:
         return {
-            f'box_{i}': self.boxes[i].get_state() for i in range(self.num_boxes)
+            f'box_{i}': self.boxes[i].get_state() for i in range(self.n_boxes)
         }
 
     def set_env_state(self, state: dict) -> None:
-        for i in range(self.num_boxes):
+        for i in range(self.n_boxes):
             self.boxes[i].set_state(state[f'box_{i}'])
 
     def get_obs(self, rewarded: bool) -> dict:
@@ -211,6 +211,154 @@ class BaseForagingEnv(Env):
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
         raise NotImplementedError
 
+    def convert_experiment_data(self, block_data: dict) -> dict:
+        r"""Converts raw experiment data to sequences at discrete time steps.
+
+        Args
+        ----
+        block_data:
+            One block of raw data loaded by `utils.load_monkey_data`.
+
+        Returns
+        -------
+        env_data:
+            A dictionary containing sequential data, with keys:
+            - `cues`: float, `(n_steps+1, n_boxes)`. Cue values in [0, 1] of
+            each box.
+            - `colors`: float, `(n_steps+1, n_boxes, height, width)`. 2D color
+            pattern on the food boxes.
+            - `push`: int, `(n_steps,)`. Index of the box pushed at each time
+            step. The values are in `[-1, n_boxes)` with ``-1`` for no push.
+            - `rewarded`: bool, `(n_steps+1,)`. Whether the monkey is rewarded
+            or not. The first element is always ``False`` corresponding to the
+            environment reset.
+            - `foods`: bool, `(n_steps+1, n_boxes)`. Food availability at each
+            time step for all boxes.
+
+        """
+        t = block_data['t']
+        n_steps = int(np.floor(t.max()/self.dt))
+
+        # actual color movie is not saved, using independent cue array generated
+        # at each time step instead
+        self.reset(seed=0) # remove stochasticity of box 'get_colors' method
+        cues, colors = [], []
+        for i in range(n_steps+1):
+            cues.append(np.clip(block_data['cues'][t>=i*self.dt, :][0], a_min=0, a_max=0.999))
+            colors.append([])
+            for box, cue in zip(self.boxes, cues[-1]):
+                colors[-1].append(box.get_colors(cue))
+        cues = np.stack(cues) # (n_steps+1, n_boxes)
+        colors = np.array(colors, dtype=float) # (n_steps+1, n_boxes, height, width)
+
+        # if mulitple pushes happen during one time step, verify they belong to the same box
+        push_t, push_idx = block_data['push_t'], block_data['push_idx']
+        push, rewarded = [], [False]
+        for i in range(n_steps):
+            t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
+            pushes = push_idx[t_idxs]
+            if len(pushes)==0: # no push
+                push.append(-1)
+                rewarded.append(False)
+            else:
+                if len(np.unique(pushes))>1:
+                    warnings.warn(
+                        f"Multiple boxes pushed at step {i}, only the last push will be recorded. "
+                        f"Consider using smaller time step (current dt={self.dt})."
+                    )
+                push.append(pushes[-1].item())
+                rewarded.append(np.any(block_data['push_flag'][t_idxs]))
+        push = np.array(push).astype(int)
+        rewarded = np.array(rewarded).astype(bool)
+
+        # food availability is inferred from the actual intervals
+        foods = []
+        for b_idx in range(self.n_boxes):
+            if block_data['gamma_shape']==1:
+                tau = block_data['taus'][b_idx].item()
+                first_rewarded = block_data['push_flag'][block_data['push_idx']==b_idx][0].item()
+            else:
+                tau, first_rewarded = None, None
+            foods.append(get_food_avails(
+                block_data['push_t'][block_data['push_idx']==b_idx],
+                block_data['intervals'][b_idx], n_steps, dt=self.dt,
+                tau=tau, first_rewarded=first_rewarded,
+            ))
+        foods = np.stack(foods, axis=1)
+
+        env_data = {
+            'cues': cues, 'colors': colors,
+            'push': push, 'rewarded': rewarded, 'foods': foods,
+        }
+        return env_data
+
+    def _extract_env_states(self, env_data: dict) -> list:
+        r"""Extracts box states from the converted data.
+
+        Args
+        ----
+        env_data:
+            See `extract_episode` for more details.
+
+        Returns
+        -------
+        env_states:
+            A list of box states.
+
+        """
+        n_steps = len(env_data['push'])
+        if np.all([isinstance(box, PoissonBox) for box in self.boxes]):
+            env_states = [
+                {f'box_{i}': {
+                    'food': int(env_data['foods'][t, i]),
+                    'cue': np.array([env_data['cues'][t, i]]),
+                } for i in range(self.n_boxes)} for t in range(n_steps+1)
+            ]
+        else:
+            raise NotImplementedError
+        return env_states
+
+    def _extract_obss(self, env_data: dict) -> list:
+        r"""Extracts explicit observations from the coverted data.
+
+        Args
+        ----
+        env_data:
+            See `extract_episode` for more details.
+
+        Returns
+        -------
+        obss:
+            A list of observations.
+
+        """
+        n_steps = len(env_data['push'])
+        obss = [{'rewarded': int(env_data['rewarded'][t])} for t in range(n_steps+1)]
+        return obss
+
+    def extract_episode(self, env_data: dict) -> tuple[list, list, list, Array]:
+        r"""Extracts an episode from the converted data.
+
+        Missing data will be filled in by certain strategy.
+
+        Args
+        ----
+        env_data:
+            A dictionary containing sequential data in one block, discretized
+            in time with time bin size `dt`, see `convert_experiment_data` for
+            more details.
+
+        Returns
+        -------
+        agt_states, env_states, obss: `(n_steps+1,)`
+            Each is a list of corresponding variable, as in `info` returned by
+            `reset` and `step`.
+        actions: int, `(n_steps,)`
+            Integers for action taken at each time step.
+
+        """
+        raise NotImplementedError
+
 
 class BanditForagingEnv(BaseForagingEnv):
     r"""Foraging environment similar to multi-armed bandit problem.
@@ -222,17 +370,26 @@ class BanditForagingEnv(BaseForagingEnv):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.action_space = Discrete(self.num_boxes+1)
+        self.action_space = Discrete(self.n_boxes+1)
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
-        reward = self.monkey.step(action<self.num_boxes)
+        # action==n_boxes is 'no push'
+        reward = self.monkey.step(action<self.n_boxes)
         rewarded = False
-        for i in range(self.num_boxes):
+        for i in range(self.n_boxes):
             _reward = self.boxes[i].step(action==i)
             reward += _reward
             rewarded |= _reward>0
         observation, info = self._get_observation_and_info(rewarded)
         return observation, reward, False, False, info
+
+    def extract_episode(self, env_data):
+        n_steps = len(env_data['push'])
+        agt_states = [{} for _ in range(n_steps+1)]
+        env_states = self._extract_env_states(env_data)
+        obss = self._extract_obss(env_data)
+        actions = np.mod(env_data['push'], self.n_boxes+1).astype(int)
+        return agt_states, env_states, obss, actions
 
 
 class ArenaForagingEnv(BaseForagingEnv):
@@ -261,8 +418,8 @@ class ArenaForagingEnv(BaseForagingEnv):
             monkey = Config(monkey).fill({'_target_': 'hexarena.monkey.ArenaMonkey'})
         monkey.arena = self.arena
         super().__init__(monkey=monkey, **kwargs)
-        assert self.arena.num_boxes==self.num_boxes
-        for i in range(self.num_boxes):
+        assert self.arena.n_boxes==self.n_boxes
+        for i in range(self.n_boxes):
             self.boxes[i].pos = self.arena.boxes[i]
 
         self.obs_space = Dict({
@@ -308,58 +465,51 @@ class ArenaForagingEnv(BaseForagingEnv):
         return observation, reward, False, False, info
 
     def convert_experiment_data(self, block_data: dict, arena_radius=1860.) -> dict:
-        r"""Converts raw experiment data to discrete values.
+        r"""Converts raw experiment data to sequences at discrete time steps.
 
-        Spatial and temporal discretization is done to get integer states,
-        observations and actions.
+        Spatial discretization is done to `pos` and `gaze`.
 
         Args
         ----
         block_data:
-            One block of raw data loaded by `utils.load_monkey_data`.
+            One block of raw data, see `BaseForagingEnv.convert_experiment_data`
+            for more details.
         arena_radius:
-            Radius of the arena, (possibly) in mm.
+            Radius of the arena, in mm.
 
         Returns
         -------
         env_data:
-            A dictionary containing discretized data, with keys:
-            - `pos`: int, `(num_steps+1,)`. Monkey position in `[-1, num_tiles)`,
+            A dictionary containing sequential data, with keys additional to
+            what `BaseForagingEnv` returned:
+            - `pos`: int, `(n_steps+1,)`. Monkey position in `[-1, n_tiles)`,
             with '-1' for missing data.
-            - `gaze`: int, `(num_steps+1,)`. Gaze position in `[-1, num_tiles)`,
+            - `gaze`: int, `(n_steps+1,)`. Gaze position in `[-1, n_tiles)`,
             with '-1' for missing data.
-            - `colors`: float, `(num_steps+1, num_boxes, height, width)`. Colors
-            on the food boxes.
-            - `push`: int, `(num_steps,)`. Index of the box pushed at each time
-            step. The values are in `[-1, num_boxes)` with ``-1`` for no push.
-            - `rewarded`: bool, `(num_steps+1,)`. Whether the monkey is rewarded
-            or not. The first element is always ``False`` corresponding to the
-            environment reset.
-            - `foods`: bool, `(num_steps+1, num_boxes)`. Food availability at
-            each time step for all boxes.
 
         """
+        env_data = super().convert_experiment_data(block_data)
+        n_steps = len(env_data['push'])
         t = block_data['t']
-        num_steps = int(np.floor(t.max()/self.dt))
 
-        def get_trajectory(xyz):
+        def get_trajectory(xyz: Array) -> Array:
             r"""Extracts 2D trajectories as in tile indices.
 
             Args
             ----
-            xyz: (n_stamps, 3), float
+            xyz: float, `(n_stamps, 3)`
                 Raw 3D coordinates in mm with time stamps marked in `t`.
 
             Returns
             -------
-            vals: (n_steps,), int
+            vals: int, `(n_steps,)`
                 Tile indices at each time step of size `self.dt`. '-1' for
                 missing data.
 
             """
             xy = xyz[:, :2]/arena_radius
             vals = []
-            for i in range(num_steps+1):
+            for i in range(n_steps+1):
                 _xy = xy[(t>=(i-0.5)*self.dt)&(t<(i+0.5)*self.dt), :]
                 if np.all(np.isnan(_xy[:, 0])) or np.all(np.isnan(_xy[:, 1])):
                     vals.append(-1) # data gap
@@ -371,55 +521,12 @@ class ArenaForagingEnv(BaseForagingEnv):
         pos = get_trajectory(block_data['pos_xyz'])
         gaze = get_trajectory(block_data['gaze_xyz'])
 
-        # actual color movie is not saved, using independent cue array generated
-        # at each time step instead
-        self.reset(seed=0) # remove stochasticity of box 'get_colors' method
-        colors = []
-        for i in range(num_steps+1):
-            cues = np.clip(block_data['cues'][t>=i*self.dt, :][0], a_min=0, a_max=0.999)
-            colors.append([])
-            for box, cue in zip(self.boxes, cues):
-                colors[-1].append(box.get_colors(cue))
-        colors = np.array(colors, dtype=float)
+        # when a box is pushed, monkey location is forced to be at the tile
+        for i in range(n_steps):
+            if env_data['push'][i]>=0:
+                pos[i+1] = self.arena.boxes[env_data['push'][i]]
 
-        push_t, push_idx = block_data['push_t'], block_data['push_idx']
-        push, rewarded = [], [False]
-        for i in range(num_steps):
-            t_idxs, = ((push_t>=i*self.dt)&(push_t<(i+1)*self.dt)).nonzero()
-            pushes = push_idx[t_idxs]
-            if len(pushes)==0: # no push
-                push.append(-1)
-                rewarded.append(False)
-            else:
-                if len(np.unique(pushes))>1:
-                    warnings.warn(
-                        f"Multiple boxes pushed at step {i}, only the last push will be recorded. "
-                        f"Consider using smaller time step (current dt={self.dt})."
-                    )
-                push.append(pushes[-1].item())
-                pos[i+1] = self.arena.boxes[push[-1]]
-                rewarded.append(np.any(block_data['push_flag'][t_idxs]))
-        push = np.array(push).astype(int)
-        rewarded = np.array(rewarded).astype(bool)
-
-        foods = []
-        for b_idx in range(self.num_boxes):
-            if block_data['gamma_shape']==1:
-                tau = block_data['taus'][b_idx].item()
-                first_rewarded = block_data['push_flag'][block_data['push_idx']==b_idx][0].item()
-            else:
-                tau, first_rewarded = None, None
-            foods.append(get_food_avails(
-                block_data['push_t'][block_data['push_idx']==b_idx],
-                block_data['intervals'][b_idx], num_steps, dt=self.dt,
-                tau=tau, first_rewarded=first_rewarded,
-            ))
-        foods = np.stack(foods, axis=1)
-
-        env_data = {
-            'pos': pos, 'gaze': gaze, 'colors': colors,
-            'push': push, 'rewarded': rewarded, 'foods': foods,
-        }
+        env_data.update({'pos': pos, 'gaze': gaze})
         return env_data
 
     def convert_simulated_data(self,
@@ -448,7 +555,7 @@ class ArenaForagingEnv(BaseForagingEnv):
             colors.append(info['colors'])
             foods.append([
                 info['env_state'][f'box_{i}']['food']
-                for i in range(self.num_boxes)
+                for i in range(self.n_boxes)
             ])
         pos = np.array(pos).astype(int)
         gaze = np.array(gaze).astype(int)
@@ -491,7 +598,7 @@ class ArenaForagingEnv(BaseForagingEnv):
 
         """
         num_steps = len(push)
-        counts = np.zeros((num_steps+1, self.num_boxes, 2), dtype=int)
+        counts = np.zeros((num_steps+1, self.n_boxes, 2), dtype=int)
         for t in range(num_steps):
             counts[t+1] = counts[t]
             if rewarded[t+1]: # successful count
@@ -500,81 +607,53 @@ class ArenaForagingEnv(BaseForagingEnv):
                 counts[t+1, push[t], 1] += 1
         return counts
 
-    def extract_observation_action_reward(self, env_data: dict) -> tuple[Array, Array, Array]:
-        r"""Extract observation, action and reward sequences.
-
-        Data gaps will be filled from previous frames. Colors of the boxes that
-        are not being looked at will be marked with `num_grades` to represent
-        'UNKNOWN'.
-
-        Args
-        ----
-        env_data:
-            Discretized data returned by `convert_experiment_data`.
-
-        Returns
-        -------
-        observations: (num_steps+1, observation_dim) int
-            Observations include monkey position and gaze, concatenated with all
-            colors of food boxes.
-        actions: (num_steps,) int
-            Actions by the monkey.
-        rewards: (num_steps,) float
-            Rewards computed based on monkey action and push outcomes.
-
-        """
-        raise NotImplementedError
-        num_steps = env_data['num_steps']
-
-        self.reset(seed=0) # remove stochasticity of monkey 'look' method
-        observations = np.empty((num_steps+1, len(self.observation_space.nvec)), dtype=int)
-        for t in range(num_steps+1):
-            for i in range(2):
-                if i==0:
-                    vals = env_data['pos']
-                if i==1:
-                    vals = env_data['gaze']
+    def _extract_agt_states(self, env_data: dict) -> list[dict]:
+        r"""Extracts monkey states."""
+        n_steps = len(env_data['push'])
+        _agt_states = {
+            'pos': np.empty((n_steps+1,), dtype=int),
+            'gaze': np.empty((n_steps+1,), dtype=int),
+        }
+        for key in _agt_states:
+            vals = env_data[key]
+            for t in range(n_steps+1):
                 if vals[t]>=0:
-                    observations[t, i] = vals[t]
+                    _agt_states[key][t] = vals[t]
                 else: # deal with data gap
                     if t>0:
-                        observations[t, i] = observations[t-1, i] # previous frame
+                        _agt_states[key][t] = _agt_states[key][t-1] # previous step
                     else:
-                        observations[t, i] = vals[(vals>=0).nonzero()[0].min()] # first valid frame
-            i = 2
-            for b_idx, box in enumerate(self.boxes):
-                if observations[t, 1]==self.arena.boxes[b_idx]:
-                    color = self.monkey.look(env_data['colors'][t, b_idx])
-                else:
-                    color = self.monkey.num_grades
-                observations[t, i+b_idx] = color
-            i += self.num_boxes
-            observations[t, i] = int(t>0 and env_data['success'][t-1])
+                        _agt_states[key][t] = vals[(vals>=0).nonzero()[0].min()] # first valid step
+        agt_states = [{key: _agt_states[key][t].item() for key in _agt_states} for t in range(n_steps+1)]
+        return agt_states
 
-        actions = np.empty((num_steps,), dtype=int)
-        for t in range(num_steps):
-            if env_data['push'][t]:
-                pos = self.arena.boxes[env_data['box_idx'][t]]
-            else:
-                pos = observations[t+1, 0]
-            actions[t] = self.monkey.index_action(
-                env_data['push'][t], pos, observations[t+1, 1],
-            )
+    def _extract_obss(self, env_data: dict):
+        obss = super()._extract_obss(env_data)
+        n_steps = len(env_data['push'])
+        self.reset(seed=0) # remove stochasticity of monkey 'look' method
+        for t in range(n_steps+1):
+            b_idx = next((i for i, box in enumerate(self.boxes) if env_data['gaze'][t]==box.pos), None)
+            obss[t].update({
+                'color': np.array(
+                    (0., 0.) if b_idx is None else self.monkey.look(env_data['colors'][t, b_idx])
+                ),
+            })
+        return obss
 
-        rewards = np.empty((num_steps,), dtype=float)
-        for t in range(num_steps):
-            pos, gaze = env_data['pos'][t], env_data['gaze'][t]
-            self.monkey.set_state((pos, gaze))
-            push, move, look = env_data['push'][t], env_data['pos'][t+1], env_data['gaze'][t+1]
-            reward = self.monkey.step(push, move, look)
-            reward += -self.time_cost
-            if env_data['success'][t]:
-                for box in self.boxes:
-                    if move==box.pos:
-                        reward += box.reward
-            rewards[t] = reward
+    def extract_episode(self, env_data: dict) -> tuple[list, list, list, Array]:
+        agt_states = self._extract_agt_states(env_data)
+        env_states = self._extract_env_states(env_data)
+        obss = self._extract_obss(env_data)
 
-        return observations, actions, rewards
+        n_steps = len(env_data['push'])
+        actions = []
+        for t in range(n_steps):
+            actions.append(self.monkey.index_action(
+                env_data['push'][t]>=0,
+                agt_states[t+1]['pos'], agt_states[t+1]['gaze'],
+            ))
+        actions = np.array(actions).astype(int)
+        return agt_states, env_states, obss, actions
 
     def summarize_episodes(self,
         observations: list[Sequence[dict]],
@@ -601,10 +680,10 @@ class ArenaForagingEnv(BaseForagingEnv):
         raise NotImplementedError
         assert len(observations)==len(actions), "Number of episodes inconsistent."
         num_episodes = len(observations)
-        push_count = np.zeros(self.arena.num_boxes)
-        food_count = np.zeros(self.arena.num_boxes)
-        pos_hist = np.zeros(self.arena.num_tiles)
-        gaze_hist = np.zeros(self.arena.num_tiles)
+        push_count = np.zeros(self.arena.n_boxes)
+        food_count = np.zeros(self.arena.n_boxes)
+        pos_hist = np.zeros(self.arena.n_tiles)
+        gaze_hist = np.zeros(self.arena.n_tiles)
         for e_idx in range(num_episodes):
             for t, action in enumerate(actions[e_idx]):
                 push, move, look = self.monkey.convert_action(action)
@@ -669,13 +748,13 @@ class ArenaForagingEnv(BaseForagingEnv):
         else:
             tile_color = 'red' if rewarded else 'blue'
         if foods is None or colors is None:
-            foods_color = ['none']*self.num_boxes
+            foods_color = ['none']*self.n_boxes
         else:
             foods_color = ['red' if food else 'blue' for food in foods]
         if colors is None:
-            colors = np.full((self.num_boxes, 1, 1), np.nan)
+            colors = np.full((self.n_boxes, 1, 1), np.nan)
         if counts is None:
-            texts = ['']*self.num_boxes
+            texts = ['']*self.n_boxes
         else:
             texts = ['{}/{}'.format(*count) for count in counts]
         if artists is None:
@@ -707,12 +786,12 @@ class ArenaForagingEnv(BaseForagingEnv):
                 h_counts.append(h_count)
         else:
             h_pos, h_gaze = artists[:2]
-            h_foods = artists[2:(2+self.num_boxes)]
-            h_boxes = artists[(2+self.num_boxes):(2+2*self.num_boxes)]
-            h_counts = artists[(2+2*self.num_boxes):(2+3*self.num_boxes)]
+            h_foods = artists[2:(2+self.n_boxes)]
+            h_boxes = artists[(2+self.n_boxes):(2+2*self.n_boxes)]
+            h_counts = artists[(2+2*self.n_boxes):(2+3*self.n_boxes)]
             self.arena.plot_tile(ax, pos, tile_color, h_tile=h_pos)
             h_gaze.set_offsets(self.arena.anchors[gaze] if gaze>=0 else (np.nan, np.nan))
-            for i in range(self.num_boxes):
+            for i in range(self.n_boxes):
                 h_foods[i].set_color(foods_color[i])
                 h_boxes[i].set_data(colors[i])
                 h_counts[i].set_text(texts[i])
@@ -747,7 +826,7 @@ class ArenaForagingEnv(BaseForagingEnv):
 
         """
         raise NotImplementedError
-        assert len(axes)==self.num_boxes
+        assert len(axes)==self.n_boxes
         if artists is None:
             if p_max is None:
                 p_max = np.nanmax(p_boxes)
@@ -761,7 +840,7 @@ class ArenaForagingEnv(BaseForagingEnv):
                     )
                     h_boxes.append(h)
                 ax.set_xticks([0.5/n_levels, (n_levels-0.5)/n_levels])
-                if i==self.num_boxes-1:
+                if i==self.n_boxes-1:
                     ax.set_xticklabels(['min', 'max'])
                     ax.set_xlabel('Color cue', labelpad=-10)
                 else:
@@ -774,7 +853,7 @@ class ArenaForagingEnv(BaseForagingEnv):
             artists = h_boxes
         else:
             h_boxes = artists
-            for i in range(self.num_boxes):
+            for i in range(self.n_boxes):
                 for k in range(2):
                     h_boxes[2*i+k].set_ydata(p_boxes[i, k])
         return artists
@@ -823,7 +902,7 @@ class ArenaForagingEnv(BaseForagingEnv):
         if colors is None:
             colors = [None]*(n_steps+1)
         else:
-            assert colors.shape[:2]==(n_steps+1, self.num_boxes)
+            assert colors.shape[:2]==(n_steps+1, self.n_boxes)
         if push is None or rewarded is None:
             rewarded = [None]*(n_steps+1)
             counts = [None]*(n_steps+1)
@@ -834,7 +913,7 @@ class ArenaForagingEnv(BaseForagingEnv):
         if foods is None:
             foods = [None]*(n_steps+1)
         else:
-            assert foods.shape==(n_steps+1, self.num_boxes)
+            assert foods.shape==(n_steps+1, self.n_boxes)
         if beliefs is not None:
             raise NotImplementedError("Visualization of beliefs not implemented.")
 
@@ -859,7 +938,7 @@ class ArenaForagingEnv(BaseForagingEnv):
         if beliefs is None:
             artists_b = []
         else:
-            n = self.num_boxes
+            n = self.n_boxes
             gap = 0.05
             h = (0.8-(n-1)*gap)/n
             axes = []
@@ -922,7 +1001,7 @@ class ArenaForagingEnv(BaseForagingEnv):
 
         """
         raise NotImplementedError
-        assert self.num_boxes==3, "Only implemented for three boxes."
+        assert self.n_boxes==3, "Only implemented for three boxes."
         if figsize is None:
             figsize = (6, 2.5)
         fig = plt.figure(figsize=figsize)

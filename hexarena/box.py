@@ -122,15 +122,15 @@ class BaseFoodBox:
             high += [*_high]
         return low, high
 
-    def get_state(self) -> dict[str, int|float]:
+    def get_state(self) -> dict[str, int|Array]:
         r"""Returns box state."""
         state = {'food': int(self.food), 'cue': np.array([self.cue])}
         return state
 
-    def set_state(self, state: dict[str, int|float]) -> None:
+    def set_state(self, state: dict[str, int|Array]) -> None:
         r"""Sets box state."""
         self.food = bool(state['food'])
-        self.cue = float(state['cue'])
+        self.cue = float(state['cue'].item())
         self.render()
 
     def get_colors(self, cue: float) -> Array:

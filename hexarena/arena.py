@@ -31,8 +31,8 @@ class Arena:
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
 
-        self.num_boxes = 3
-        self.num_tiles = 3*self.resol**2+3*self.resol+1
+        self.n_boxes = 3
+        self.n_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
         self.corners: list[int] = []
         self.boxes: list[int] = []
@@ -64,7 +64,7 @@ class Arena:
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
     def __str__(self) -> str:
-        return f"Arena of size {self.resol} with {self.num_boxes} boxes"
+        return f"Arena of size {self.resol} with {self.n_boxes} boxes"
 
     def __repr__(self) -> str:
         return str(self.spec)
@@ -204,7 +204,7 @@ class Arena:
         })
         disable_pbar = cbar_kw.pop('disable')
         vals = np.array(vals)
-        assert len(vals)==self.num_tiles
+        assert len(vals)==self.n_tiles
         assert np.all(vals>=0)
         cmap = plt.get_cmap(cmap)
         if vmax is None:
@@ -223,15 +223,15 @@ class Arena:
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         if h_tiles is None:
             h_tiles = []
-            for i in range(self.num_tiles):
+            for i in range(self.n_tiles):
                 h_tiles.append(self.plot_tile(ax, i, cmap(norm(vals[i]))))
             if not disable_pbar:
                 plt.colorbar(
                     mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
                 )
         else:
-            assert len(h_tiles)==self.num_tiles
-            for i in range(self.num_tiles):
+            assert len(h_tiles)==self.n_tiles
+            for i in range(self.n_tiles):
                 self.plot_tile(ax, i, cmap(norm(vals[i])), h_tile=h_tiles[i])
         return h_tiles
 
