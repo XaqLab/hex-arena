@@ -1,4 +1,4 @@
-FROM zheli21/pytorch:2.6.0-cp311-cuda118-2204 AS base
+FROM zheli21/pytorch:2.7.1-cp311-cuda118-2204 AS base
 RUN pip install -U stable-baselines3 sb3-contrib h5py
 
 FROM base AS git-repos
