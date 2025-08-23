@@ -3,6 +3,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from jarvis.config import Config
+from jarvis.utils import cls_name
 
 from .alias import Array, Axes, Artist
 
@@ -63,16 +64,16 @@ class Arena:
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
+    def __repr__(self) -> str:
+        return "{}(resol={})".format(self.__class__.__name__, self.resol)
+
     def __str__(self) -> str:
         return f"Arena of size {self.resol} with {self.n_boxes} boxes"
-
-    def __repr__(self) -> str:
-        return str(self.spec)
 
     @property
     def spec(self) -> dict:
         return {
-            '_target_': 'hexarena.arena.Arena',
+            '_target_': cls_name(self),
             'resol': self.resol,
         }
 
