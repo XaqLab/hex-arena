@@ -1,5 +1,6 @@
 import numpy as np
 from gymnasium.spaces import Discrete, Box, Dict
+from jarvis.utils import cls_name
 
 from .alias import Array, EnvParam
 from .color import get_cue_array
@@ -24,38 +25,52 @@ class BaseFoodBox:
 
     food: bool # food availability
     cue: float # scalar in [0, 1] to generate color array
-    colors: Array # a 2D float array of shape (height, width)
-    param_names: list[str] # list of parameter names
+    # colors: Array # a 2D float array of shape (height, width)
+    # param_names: list[str] # list of parameter names
 
     pos: int # position on arena
 
     def __init__(self,
+        tau: float,
         *,
+        cue_in_state: bool = True,
+        tau_in_state: bool = False,
         dt: float = 1.,
         reward: float = 10.,
         kappa: float = 0.1,
         resol: tuple[int, int] = (128, 96),
     ):
+        self.tau = tau
+        self.cue_in_state = cue_in_state
+        self.tau_in_state = tau_in_state
         self.dt = dt
         self.reward = reward
+
         self.kappa = kappa
         self.resol = resol
 
-        self.state_space = Dict({
-            'food': Discrete(2),
-            'cue': Box(0, 1),
-        })
+        if self.tau_in_state:
+            self.state_space = Dict({'tau': Box(0, np.inf)})
+        else:
+            self.state_space = Dict({})
 
         self.rng = np.random.default_rng()
-        self.param_names = ['kappa']
+        self.param_names = []
+        if self.cue_in_state:
+            self.param_names.append('kappa')
+        if self.tau_in_state:
+            self.param_names.append('tau')
 
     def __repr__(self) -> str:
-        return "Abstract base food box (kappa={:.3g})".format(self.kappa)
+        r_strs = [f'{key}={val}' for key, val in self.spec.items() if key!='_target_']
+        return "{}(\n{},\n)".format(self.__class__.__name__, ',\n'.join(r_strs))
 
     @property
     def spec(self) -> dict:
         return {
-            'dt': self.dt, 'reward': self.reward,
+            '_target_': cls_name(self),
+            'cue_in_state': self.cue_in_state, 'tau_in_state': self.tau_in_state,
+            'tau': self.tau, 'dt': self.dt, 'reward': self.reward,
             'kappa': self.kappa, 'resol': self.resol,
         }
 
@@ -76,6 +91,8 @@ class BaseFoodBox:
         """
         if name=='kappa':
             val, low, high = [self.kappa], [0], [np.inf]
+        if name=='tau':
+            val, low, high = [self.tau], [0], [np.inf]
         return val, low, high
 
     def _set_param(self, name: str, val: EnvParam) -> None:
@@ -92,6 +109,9 @@ class BaseFoodBox:
         if name=='kappa':
             assert len(val)==1
             self.kappa = val[0]
+        if name=='tau':
+            assert len(val)==1
+            self.tau = val[0]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
@@ -124,14 +144,11 @@ class BaseFoodBox:
 
     def get_state(self) -> dict[str, int|Array]:
         r"""Returns box state."""
-        state = {'food': int(self.food), 'cue': np.array([self.cue])}
-        return state
+        raise NotImplementedError
 
     def set_state(self, state: dict[str, int|Array]) -> None:
         r"""Sets box state."""
-        self.food = bool(state['food'])
-        self.cue = float(state['cue'].item())
-        self.render()
+        raise NotImplementedError
 
     def get_colors(self, cue: float) -> Array:
         r"""Returns the color cue array.
@@ -221,37 +238,13 @@ class PoissonBox(BaseFoodBox):
         tau: float = 15.,
         **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.tau = tau
-        self.param_names += ['tau']
+        super().__init__(tau, **kwargs)
+        self.state_space.spaces['food'] = Discrete(2)
+        if self.cue_in_state:
+            self.state_space.spaces['cue'] = Box(0, 1)
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return "Poisson food box with tau={:.2g} (kappa={:.3g})".format(self.tau, self.kappa)
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.PoissonBox',
-            'tau': self.tau,
-        })
-        return spec
-
-    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
-        if name=='tau':
-            val = [self.tau]
-            low = [0]
-            high = [np.inf]
-        else:
-            val, low, high = super()._get_param(name)
-        return val, low, high
-
-    def _set_param(self, name: str, val: EnvParam) -> None:
-        if name=='tau':
-            assert len(val)==1
-            self.tau = val[0]
-        else:
-            super()._set_param(name, val)
 
     def _reset(self) -> None:
         self.food = False
@@ -294,31 +287,25 @@ class GammaBox(BaseFoodBox):
         shape: float = 10.,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(tau, **kwargs)
         self.scale = tau/shape
         self.shape = shape
 
-        self.state_space = Dict({
-            'drawn': Box(0, np.inf),
-            'timer': Box(0, np.inf),
-        })
-        self.param_names += ['tau']
+        if self.cue_in_state:
+            self.state_space.spaces.update({
+                'drawn': Box(0, np.inf), 'clock': Box(0, np.inf),
+            })
+        else:
+            self.state_space['countdown'] = Box(0, np.inf)
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Box with Gamma ({self.shape}, {self.scale}) schedule"
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.GammaBox',
-            'shape': self.shape, 'scale': self.scale,
-        })
-        return spec
 
     @property
     def food(self) -> bool:
         r"""Returns food state based on current timer and level."""
+        if self.cue_in_state:
+            return self.clock>=self.drawn
         return self.timer>=self.drawn
 
     @property
