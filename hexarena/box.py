@@ -145,6 +145,8 @@ class BaseFoodBox:
         r"""Returns box state."""
         if self.tau_in_state:
             state = {'tau': np.array([self.tau])}
+        else:
+            state = {}
         return state
 
     def set_state(self, state: dict[str, int|Array]) -> None:
@@ -267,7 +269,7 @@ class PoissonBox(BaseFoodBox):
 
     def get_state(self) -> dict:
         state = super().get_state()
-        state['food'] = {'food': int(self.food)}
+        state['food'] = int(self.food)
         if self.cue_in_state:
             state['cue'] = np.array([self.cue])
         return state

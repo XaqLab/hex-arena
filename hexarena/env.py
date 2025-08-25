@@ -145,8 +145,9 @@ class BaseForagingEnv(Env):
         observation = {**agt_state, **obs}
         info = {
             'agt_state': agt_state, 'env_state': env_state, 'obs': obs,
-            'colors': np.stack([box.colors for box in self.boxes]),
         }
+        if np.all([box.cue_in_state for box in self.boxes]):
+            info['colors'] = np.stack([box.colors for box in self.boxes])
         return observation, info
 
     def get_param(self) -> EnvParam:
@@ -307,13 +308,16 @@ class BaseForagingEnv(Env):
 
         """
         n_steps = len(env_data['push'])
+        env_states = []
         if np.all([isinstance(box, PoissonBox) for box in self.boxes]):
-            env_states = [
-                {f'box_{i}': {
-                    'food': int(env_data['foods'][t, i]),
-                    'cue': np.array([env_data['cues'][t, i]]),
-                } for i in range(self.n_boxes)} for t in range(n_steps+1)
-            ]
+            for t in range(n_steps+1):
+                env_state = {}
+                for i, box in enumerate(self.boxes):
+                    box_state = {'food': int(env_data['foods'][t, i])}
+                    if box.cue_in_state:
+                        box_state['cue'] = np.array([env_data['cues'][t, i]])
+                    env_state[f'box_{i}'] = box_state
+                env_states.append(env_state)
         else:
             raise NotImplementedError
         return env_states

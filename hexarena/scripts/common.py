@@ -99,6 +99,7 @@ def create_env(
     env = env_cls(
         boxes=[{
             '_target_': box, 'kappa': kappa, 'tau': tau,
+            'cue_in_state': not no_arena,
         } for tau in taus], **({} if env_kw is None else env_kw),
     )
     return env
