@@ -25,8 +25,7 @@ class BaseFoodBox:
 
     food: bool # food availability
     cue: float # scalar in [0, 1] to generate color array
-    # colors: Array # a 2D float array of shape (height, width)
-    # param_names: list[str] # list of parameter names
+    param_names: list[str] # list of parameter names
 
     pos: int # position on arena
 
@@ -63,7 +62,7 @@ class BaseFoodBox:
 
     def __repr__(self) -> str:
         r_strs = [f'{key}={val}' for key, val in self.spec.items() if key!='_target_']
-        return "{}(\n{},\n)".format(self.__class__.__name__, ',\n'.join(r_strs))
+        return "{}({})".format(self.__class__.__name__, ', '.join(r_strs))
 
     @property
     def spec(self) -> dict:
@@ -144,11 +143,16 @@ class BaseFoodBox:
 
     def get_state(self) -> dict[str, int|Array]:
         r"""Returns box state."""
-        raise NotImplementedError
+        if self.tau_in_state:
+            state = {'tau': np.array([self.tau])}
+        return state
 
     def set_state(self, state: dict[str, int|Array]) -> None:
         r"""Sets box state."""
-        raise NotImplementedError
+        if self.tau_in_state:
+            self.tau = float(state['tau'].item())
+            assert self.tau>=0
+        self.render()
 
     def get_colors(self, cue: float) -> Array:
         r"""Returns the color cue array.
@@ -170,7 +174,8 @@ class BaseFoodBox:
 
     def render(self) -> None:
         r"""Renders color cues."""
-        self.colors = self.get_colors(self.cue)
+        if self.cue_in_state:
+            self.colors = self.get_colors(self.cue)
 
     def _reset(self) -> None:
         r"""Resets box state with existing random number generator."""
@@ -260,6 +265,20 @@ class PoissonBox(BaseFoodBox):
             if self.rng.random()<p_appear:
                 self.food = True
 
+    def get_state(self) -> dict:
+        state = super().get_state()
+        state['food'] = {'food': int(self.food)}
+        if self.cue_in_state:
+            state['cue'] = np.array([self.cue])
+        return state
+
+    def set_state(self, state: dict) -> None:
+        self.food = bool(state['food'])
+        if self.cue_in_state:
+            self.cue = float(state['cue'].item())
+            assert 0<=self.cue<=1
+        super().set_state(state)
+
 
 class GammaBox(BaseFoodBox):
     r"""Box updated by Gamma schedule and uses a linear cue.
@@ -279,39 +298,42 @@ class GammaBox(BaseFoodBox):
 
     """
 
-    drawn: float # drawn interval from Gamma distribution
-    timer: float # time since last push, [0, inf)
-
     def __init__(self,
         tau: float = 14.,
         shape: float = 10.,
         **kwargs,
     ):
-        super().__init__(tau, **kwargs)
-        self.scale = tau/shape
         self.shape = shape
+        super().__init__(tau, **kwargs)
 
         if self.cue_in_state:
             self.state_space.spaces.update({
-                'drawn': Box(0, np.inf), 'clock': Box(0, np.inf),
+                'drawn': Box(0, np.inf), 'timer': Box(0, np.inf),
             })
         else:
-            self.state_space['countdown'] = Box(0, np.inf)
+            self.state_space['countdown'] = Box(-np.inf, np.inf)
 
     def __str__(self) -> str:
         return f"Box with Gamma ({self.shape}, {self.scale}) schedule"
 
     @property
     def food(self) -> bool:
-        r"""Returns food state based on current timer and level."""
         if self.cue_in_state:
-            return self.clock>=self.drawn
-        return self.timer>=self.drawn
+            return self.timer>=self.drawn
+        else:
+            return self.countdown<=0
 
     @property
     def cue(self) -> float:
         r"""Returns cue value based on current timer and level."""
         return min(self.timer/self.drawn, 1.)
+
+    @property
+    def tau(self) -> float:
+        return self.scale*self.shape
+    @tau.setter
+    def tau(self, tau: float):
+        self.scale = tau/self.shape
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='tau':
@@ -329,25 +351,42 @@ class GammaBox(BaseFoodBox):
 
     def get_state(self) -> dict[str, float]:
         r"""Returns box state."""
-        state = {'drawn': self.drawn, 'timer': self.timer}
+        state = super().get_state()
+        if self.cue_in_state:
+            state.update({
+                'drawn': np.array([self.drawn]),
+                'timer': np.array([self.timer]),
+            })
+        else:
+            state.update({
+                'countdown': np.array([self.countdown]),
+            })
         return state
 
     def set_state(self, state: dict[str, float]) -> None:
         r"""Sets box state."""
-        self.drawn = state['drawn']
-        self.timer = state['timer']
-        self.render()
-
-    def render(self) -> None:
-        self.colors = self.get_colors(self.cue)
+        if self.cue_in_state:
+            self.drawn = float(state['drawn'].item())
+            assert self.drawn>=0
+            self.timer = float(state['timer'].item())
+            assert self.timer>=0
+        else:
+            self.countdown = float(state['countdown'].item())
+        super().set_state(state)
 
     def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""
-        self.drawn = self.rng.gamma(self.shape, self.scale)
-        self.timer = 0
+        if self.cue_in_state:
+            self.drawn = self.rng.gamma(self.shape, self.scale)
+            self.timer = 0
+        else:
+            self.countdown = self.rng.gamma(self.shape, self.scale)
 
     def _step(self, push: bool) -> None:
         if push:
             self._reset()
         else:
-            self.timer += self.dt
+            if self.cue_in_state:
+                self.timer += self.dt
+            else:
+                self.countdown -= self.dt
