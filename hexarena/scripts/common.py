@@ -51,6 +51,7 @@ def create_env(
     gamma: float = 1., kappa: float = 0.1,
     taus: list[float]|None = None,
     no_arena: bool = False,
+    tau_in_state: bool = False,
     env_kw: dict|None = None,
 ) -> BaseForagingEnv:
     r"""Creates default foraging environment.
@@ -100,6 +101,7 @@ def create_env(
         boxes=[{
             '_target_': box, 'kappa': kappa, 'tau': tau,
             'cue_in_state': not no_arena,
+            'tau_in_state': tau_in_state,
         } for tau in taus], **({} if env_kw is None else env_kw),
     )
     return env

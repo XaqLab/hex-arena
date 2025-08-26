@@ -317,6 +317,8 @@ class BaseForagingEnv(Env):
                     if box.cue_in_state:
                         box_state['cue'] = np.array([env_data['cues'][t, i]])
                     env_state[f'box_{i}'] = box_state
+                    if box.tau_in_state:
+                        box_state['tau'] = np.array([box.tau])
                 env_states.append(env_state)
         else:
             raise NotImplementedError
