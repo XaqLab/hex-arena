@@ -203,6 +203,10 @@ class BaseForagingEnv(Env):
             self.rng = np.random.default_rng(seed)
         self.monkey.rng = self.rng
         self.monkey.reset()
+        if np.all(box.tau_in_state for box in self.boxes):
+            taus = self.rng.permutation([box.tau for box in self.boxes])
+            for i, box in enumerate(self.boxes):
+                box.tau = taus[i]
         for box in self.boxes:
             box.rng = self.rng
             box.reset()
