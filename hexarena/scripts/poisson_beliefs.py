@@ -64,6 +64,7 @@ def create_manager(
         manager.model = SamplingBeliefModel(
             manager.env, p_s=p_s, cliques=cliques, n_samples=config.n_samples,
         )
+        manager.model.update_spaces()
         manager.model.use_sample = True
         manager.model.estimate_kw.update({
             'sga_kw.pbar_kw': {'disable': False, 'leave': False},
