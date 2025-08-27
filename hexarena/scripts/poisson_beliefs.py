@@ -88,11 +88,13 @@ def create_manager(
         return tensor2array({
             'beliefs': manager.beliefs,
             'infos': manager.infos,
+            'model': manager.model.state_dict(),
         })
     def load_ckpt(ckpt):
         ckpt = array2tensor(ckpt)
         manager.beliefs = ckpt['beliefs']
         manager.infos = ckpt['infos']
+        manager.model.load_state_dict(ckpt['model'])
         return len(manager.beliefs)-1
     def pbar_desc(config):
         return f'{config.session_id}-B{config.block_idx}'
