@@ -27,7 +27,7 @@ def create_manager(
         STORE_DIR/'beliefs'/subject, save_interval=save_interval, patience=patience,
     )
     manager.default = {
-        'tau_in_state': False, 'n_samples': 2000,
+        'tau_in_state': False, 'n_samples': 2000, 'seed': 0,
     }
 
     def setup(config: Config) -> int:
@@ -37,6 +37,7 @@ def create_manager(
           - block_idx: int
           - tau_in_state: bool
           - n_samples: int
+          - seed: int
 
         """
         manager.config = config
@@ -64,6 +65,7 @@ def create_manager(
         manager.model = SamplingBeliefModel(
             manager.env, p_s=p_s, cliques=cliques, n_samples=config.n_samples,
         )
+        manager.model.reset(config.seed)
         manager.model.update_spaces()
         manager.model.use_sample = True
         manager.model.estimate_kw.update({
