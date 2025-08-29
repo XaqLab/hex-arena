@@ -114,6 +114,7 @@ def main(
     subject: str = 'marco',
     tau_in_state: bool = False,
     n_samples: int = 2000,
+    n_seeds: int = 6,
     num_works: int|None = None,
     **kwargs,
 ):
@@ -138,7 +139,8 @@ def main(
     configs = [Config({
         'session_id': session_id, 'block_idx': block_idx,
         'tau_in_state': tau_in_state, 'n_samples': n_samples,
-    }) for session_id, block_idx in block_ids]
+        'seed': seed,
+    }) for session_id, block_idx in block_ids for seed in range(n_seeds)]
     np.random.default_rng().shuffle(configs)
     manager.batch(
         configs, num_works=num_works,
