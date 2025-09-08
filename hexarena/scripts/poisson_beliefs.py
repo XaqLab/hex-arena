@@ -112,6 +112,7 @@ def create_manager(
 
 def main(
     subject: str = 'marco',
+    block_ids: list[tuple[str, int]]|None = None,
     tau_in_state: bool = False,
     n_samples: int = 2000,
     n_seeds: int = 6,
@@ -134,8 +135,9 @@ def main(
     """
     manager = create_manager(subject, **kwargs)
 
-    block_infos = get_valid_blocks(subject, min_pos_ratio=0, min_gaze_ratio=0, min_push=10)
-    block_ids = [key for key in block_infos if block_infos[key]['gamma']==1]
+    if block_ids is None:
+        block_infos = get_valid_blocks(subject, min_pos_ratio=0, min_gaze_ratio=0, min_push=10)
+        block_ids = [key for key in block_infos if block_infos[key]['gamma']==1]
     configs = [Config({
         'session_id': session_id, 'block_idx': block_idx,
         'tau_in_state': tau_in_state, 'n_samples': n_samples,
