@@ -540,7 +540,6 @@ class ArenaForagingEnv(BaseForagingEnv):
         return env_data
 
     def convert_simulated_data(self,
-        observations: list[dict],
         infos: list[dict],
         actions: Sequence[int],
     ) -> dict:
@@ -558,17 +557,19 @@ class ArenaForagingEnv(BaseForagingEnv):
             `convert_experiment_data`.
 
         """
-        pos, gaze, colors, foods = [], [], [], []
+        pos, gaze, rewarded, colors, foods = [], [], [], [], []
         for info in infos:
             pos.append(info['agt_state']['pos'])
             gaze.append(info['agt_state']['gaze'])
+            rewarded.append(info['obs']['rewarded'])
             colors.append(info['colors'])
+            self.set_env_state(info['env_state'])
             foods.append([
-                info['env_state'][f'box_{i}']['food']
-                for i in range(self.n_boxes)
+                self.boxes[i].food for i in range(self.n_boxes)
             ])
         pos = np.array(pos).astype(int)
         gaze = np.array(gaze).astype(int)
+        rewarded = np.array(rewarded).astype(bool)
         colors = np.stack(colors).astype(float)
         foods = np.stack(foods).astype(bool)
         push = []
@@ -579,7 +580,6 @@ class ArenaForagingEnv(BaseForagingEnv):
             else:
                 push.append(-1)
         push = np.array(push).astype(int)
-        rewarded = np.array([o['rewarded'] for o in observations]).astype(bool)
         env_data = {
             'pos': pos, 'gaze': gaze, 'colors': colors,
             'push': push, 'rewarded': rewarded, 'foods': foods,
