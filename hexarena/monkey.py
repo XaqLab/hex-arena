@@ -41,7 +41,9 @@ class BaseMonkey:
         return "Monkey with push cost {:g}".format(self.push_cost)
 
     def __repr__(self) -> str:
-        return str(self.spec)
+        return "{}({})".format(self.__class__.__name__, ', '.join([
+            f'{k}={v}' for k, v in self.spec.items() if k!='_target_'
+        ]))
 
     @property
     def spec(self) -> dict:
