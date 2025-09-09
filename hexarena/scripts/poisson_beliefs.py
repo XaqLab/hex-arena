@@ -125,6 +125,9 @@ def main(
     ----
     subject:
         Monkey name, can be 'marco', 'dylan' or 'viktor'.
+    block_ids:
+        A list of tuples as `(session_id, block_idx)`. If not provided, all
+        blocks using Poisson boxes will be processed.
     tau_in_state:
         Whether to include box quality 'tau' in the box state.
     n_samples:
