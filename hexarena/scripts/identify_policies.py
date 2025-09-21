@@ -116,7 +116,7 @@ def create_manager(
             'gammas': manager.gammas, 'log_Zs': manager.log_Zs,
         })
     def load_ckpt(ckpt):
-        ckpt = array2tensor(ckpt, manager.model.device)
+        ckpt = array2tensor(ckpt, manager.hmp.device)
         manager.hmp.load_state_dict(ckpt['state_dict'])
         for key in ['Ps', 'As', 'losses', 'gammas', 'log_Zs']:
             setattr(manager, key, ckpt[key])
