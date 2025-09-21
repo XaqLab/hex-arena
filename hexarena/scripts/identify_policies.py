@@ -11,7 +11,7 @@ from .. import STORE_DIR
 
 
 def create_manager(
-    subject: str, data_pth: Path, kappas: list[float],
+    subject: str, data_pth: Path|None = None, kappas: list[float]|None = None,
     save_interval: int = 1, patience: float = 1.,
 ) -> Manager:
     r"""Creates a manager for policy identification.
@@ -25,6 +25,10 @@ def create_manager(
         Arguments of the manager, see `Manager` for more details.
 
     """
+    if data_pth is None:
+        data_pth = STORE_DIR/f'{subject}.mean.beliefs.pkl'
+    if kappas is None:
+        kappas = [0.01]
     manager = Manager(
         STORE_DIR/'policies'/subject, save_interval=save_interval, patience=patience,
     )
@@ -178,9 +182,7 @@ def main(
         choices = Config(choices).fill({
             'seed': list(range(6)),
             'n_policies': [1, 2, 3, 4, 5, 6],
-            'policy.num_features': [
-                [],
-            ],
+            'policy.num_features': [[], [16]],
             'reg_coefs': {
                 'alpha_A': [1., 1e2, 1e4],
                 'off_ratio': [0.9, 0.3, 0.1],
@@ -196,5 +198,6 @@ def main(
 
 if __name__=='__main__':
     main(**from_cli().fill({
+        'data_pth': 'marco.mean.beliefs.pkl',
         'kappas': [0.01, 0.1],
     }))
