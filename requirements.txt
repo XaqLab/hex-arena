@@ -1,3 +1,1 @@
-jarvis>=0.6.2
-irc>=0.4.0
-h5py
+jarvis>=0.7.0
