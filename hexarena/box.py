@@ -1,14 +1,8 @@
 import numpy as np
-import torch
-from scipy import stats
-from gymnasium.spaces import MultiDiscrete
-from irc.dist.space import DiscreteVarSpace
-from irc.dist.embedder import BaseEmbedder
-from irc.model import SamplingBeliefModel
+from gymnasium.spaces import Discrete, Box, Dict
+from jarvis.utils import cls_name
 
-from collections.abc import Sequence
-
-from .alias import Array, Tensor, BoxState, EnvParam
+from .alias import Array, EnvParam
 from .color import get_cue_array
 
 
@@ -21,8 +15,6 @@ class BaseFoodBox:
         Time step size for temporal discretization, in seconds.
     reward:
         Reward value of food, not considered as a parameter.
-    num_levels:
-        Number of box quality levels.
     kappa:
         Non-negative float for stimulus reliability, see `.color.get_cue_movie`
         for more details.
@@ -32,36 +24,52 @@ class BaseFoodBox:
     """
 
     food: bool # food availability
-    level: int # a number in [0, num_levels)
-    colors: Array # a 2D float array of shape (height, width)
+    cue: float # scalar in [0, 1] to generate color array
+    param_names: list[str] # list of parameter names
+
+    pos: int # position on arena
 
     def __init__(self,
+        tau: float,
         *,
+        cue_in_state: bool = True,
+        tau_in_state: bool = False,
         dt: float = 1.,
         reward: float = 10.,
-        num_levels: int = 3,
         kappa: float = 0.1,
-        resol: tuple[int, int] = (128, 128),
+        resol: tuple[int, int] = (128, 96),
     ):
+        self.tau = tau
+        self.cue_in_state = cue_in_state
+        self.tau_in_state = tau_in_state
         self.dt = dt
         self.reward = reward
-        self.num_levels = num_levels
+
         self.kappa = kappa
         self.resol = resol
 
-        self.state_space = MultiDiscrete([2, self.num_levels]) # state: (food, level)
+        if self.tau_in_state:
+            self.state_space = Dict({'tau': Box(0, np.inf)})
+        else:
+            self.state_space = Dict({})
 
         self.rng = np.random.default_rng()
-        self.param_names = ['kappa']
+        self.param_names = []
+        if self.cue_in_state:
+            self.param_names.append('kappa')
+        if self.tau_in_state:
+            self.param_names.append('tau')
 
     def __repr__(self) -> str:
-        return f"Box with {self.num_levels} levels"
+        r_strs = [f'{key}={val}' for key, val in self.spec.items() if key!='_target_']
+        return "{}({})".format(self.__class__.__name__, ', '.join(r_strs))
 
     @property
     def spec(self) -> dict:
         return {
-            'dt': self.dt, 'reward': self.reward,
-            'num_levels': self.num_levels,
+            '_target_': cls_name(self),
+            'cue_in_state': self.cue_in_state, 'tau_in_state': self.tau_in_state,
+            'tau': self.tau, 'dt': self.dt, 'reward': self.reward,
             'kappa': self.kappa, 'resol': self.resol,
         }
 
@@ -82,6 +90,8 @@ class BaseFoodBox:
         """
         if name=='kappa':
             val, low, high = [self.kappa], [0], [np.inf]
+        if name=='tau':
+            val, low, high = [self.tau], [0], [np.inf]
         return val, low, high
 
     def _set_param(self, name: str, val: EnvParam) -> None:
@@ -98,6 +108,9 @@ class BaseFoodBox:
         if name=='kappa':
             assert len(val)==1
             self.kappa = val[0]
+        if name=='tau':
+            assert len(val)==1
+            self.tau = val[0]
 
     def get_param(self) -> EnvParam:
         r"""Returns box parameters."""
@@ -128,15 +141,20 @@ class BaseFoodBox:
             high += [*_high]
         return low, high
 
-    def get_state(self) -> BoxState:
+    def get_state(self) -> dict[str, int|Array]:
         r"""Returns box state."""
-        state = (int(self.food), self.level)
+        if self.tau_in_state:
+            state = {'tau': np.array([self.tau])}
+        else:
+            state = {}
         return state
 
-    def set_state(self, state: BoxState) -> None:
+    def set_state(self, state: dict[str, int|Array]) -> None:
         r"""Sets box state."""
-        self.food = bool(state[0])
-        self.level = state[1]
+        if self.tau_in_state:
+            self.tau = float(state['tau'].item())
+            assert self.tau>=0
+        self.render()
 
     def get_colors(self, cue: float) -> Array:
         r"""Returns the color cue array.
@@ -157,16 +175,12 @@ class BaseFoodBox:
         return colors
 
     def render(self) -> None:
-        r"""Renders color cues.
-
-        The cue value is determined based on current box state, and the cue
-        array `self.colors` is updated.
-
-        """
-        cue = self.level/(self.num_levels-1)
-        self.colors = self.get_colors(cue)
+        r"""Renders color cues."""
+        if self.cue_in_state:
+            self.colors = self.get_colors(self.cue)
 
     def _reset(self) -> None:
+        r"""Resets box state with existing random number generator."""
         raise NotImplementedError
 
     def reset(self, seed: int|None = None) -> None:
@@ -184,6 +198,14 @@ class BaseFoodBox:
         self.render()
 
     def _step(self, push: bool) -> None:
+        r"""Updates box state after reward outcome is dealt with.
+
+        Args
+        ----
+        push:
+            Whether to push the button to open the box.
+
+        """
         raise NotImplementedError
 
     def step(self, push: bool) -> float:
@@ -192,7 +214,7 @@ class BaseFoodBox:
         Args
         ----
         push:
-            Whether to push the button of food box.
+            Whether to push the button to open the box.
 
         Returns
         -------
@@ -207,15 +229,12 @@ class BaseFoodBox:
 
 
 class PoissonBox(BaseFoodBox):
-    r"""Box with food following a Poisson process.
-
-    Different quality levels are characterized by different parameters of
-    Poisson process.
+    r"""Box with food appearance following a Poisson process.
 
     Args
     ----
-    taus:
-        Time constant for Poisson process corresponding to each level.
+    tau:
+        Time constant of the Poisson process.
     kwargs:
         Keyword arguments for `BaseFoodBox`.
 
@@ -223,204 +242,47 @@ class PoissonBox(BaseFoodBox):
 
     def __init__(self,
         *,
-        taus: Sequence[float]|None = None,
+        tau: float = 15.,
         **kwargs,
     ):
-        if taus is not None:
-            kwargs['num_levels'] = len(taus)
-        super().__init__(**kwargs)
-        if taus is None:
-            max_tau = 36. # sec
-            self.taus = np.arange(self.num_levels, 0, -1)/self.num_levels*max_tau
-        else:
-            assert len(taus)==self.num_levels
-            self.taus = np.array([*taus])
-        self.taus: Array
+        super().__init__(tau, **kwargs)
+        self.state_space.spaces['food'] = Discrete(2)
+        if self.cue_in_state:
+            self.state_space.spaces['cue'] = Box(0, 1)
 
-        self.param_names += ['taus']
-
-    def __repr__(self) -> str:
-        return "Box with taus: ({})".format(', '.join([
-            '{:.2g}'.format(tau) for tau in self.taus
-        ]))
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.PoissonBox',
-            'taus': list(self.taus),
-        })
-        return spec
-
-    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
-        if name=='taus':
-            val = [*self.taus]
-            low = [0]*self.num_levels
-            high = [np.inf]*self.num_levels
-        else:
-            val, low, high = super()._get_param(name)
-        return val, low, high
-
-    def _set_param(self, name: str, val: EnvParam) -> None:
-        if name=='taus':
-            assert len(val)==self.num_levels
-            self.taus = np.array([*val])
-        else:
-            super()._set_param(name, val)
+    def __str__(self) -> str:
+        return "Poisson food box with tau={:.2g} (kappa={:.3g})".format(self.tau, self.kappa)
 
     def _reset(self) -> None:
         self.food = False
-        self.level = 0
+        self.cue = 0.
 
     def _step(self, push: bool) -> None:
         if push:
-            self.food = False
+            self._reset()
         else:
-            p_appear = 1-np.exp(-self.dt/self.taus[self.level])
+            gamma = np.exp(-self.dt/self.tau).item()
+            self.cue = 1-(1-self.cue)*gamma
+            p_appear = 1-gamma
             if self.rng.random()<p_appear:
                 self.food = True
 
+    def get_state(self) -> dict:
+        state = super().get_state()
+        state['food'] = int(self.food)
+        if self.cue_in_state:
+            state['cue'] = np.array([self.cue])
+        return state
 
-class StationaryBox(PoissonBox):
-    r"""Box with a fixed quality.
-
-    Box level represents the probability of food presence instead of food appear
-    rate.
-
-    Args
-    ----
-    tau:
-        Time constant for every level.
-    num_levels:
-        Number of cue levels instead of quality levels.
-    kwargs:
-        Keyword arguments for `PoissonBox`.
-
-    """
-
-    def __init__(self,
-        tau: float = 24.,
-        num_levels: int = 8,
-        **kwargs,
-    ):
-        super().__init__(taus=[tau]*num_levels, **kwargs)
-
-    def __repr__(self) -> str:
-        return "Box with tau: ({})".format(self.taus[0])
-
-    @property
-    def tau(self) -> float:
-        return self.taus[0]
-    @tau.setter
-    def tau(self, val) -> float:
-        self.taus = np.full_like(self.taus, fill_value=val)
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        tau = float(spec.pop('taus')[0])
-        spec.update({
-            '_target_': 'hexarena.box.StationaryBox',
-            'tau': tau,
-        })
-        return spec
-
-    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
-        if name=='taus':
-            val = [self.tau]
-            low = [0]
-            high = [np.inf]
-        else:
-            val, low, high = super()._get_param(name)
-        return val, low, high
-
-    def _set_param(self, name: str, val: EnvParam) -> None:
-        if name=='taus':
-            assert len(val)==1
-            super()._set_param('taus', [val[0]]*self.num_levels)
-        else:
-            super()._set_param(name, val)
-
-    def _step(self, push: bool) -> None:
-        super()._step(push)
-        if push: # reset to lowest level
-            self.level = 0
-        else: # level increase approximately according to cumulative probability
-            p = self.rng.uniform(self.level/self.num_levels, (self.level+1)/self.num_levels)
-            p = 1-(1-p)*np.exp(-self.dt/self.taus[0])
-            self.level = min(int(np.floor(p*self.num_levels)), self.num_levels-1)
+    def set_state(self, state: dict) -> None:
+        self.food = bool(state['food'])
+        if self.cue_in_state:
+            self.cue = float(state['cue'].item())
+            assert 0<=self.cue<=1
+        super().set_state(state)
 
 
-class VolatileBox(PoissonBox):
-    r"""Box with volatile qualities.
-
-    Box level will change to a random value, with the change happening according
-    to a Poisson process. Incorrect push will lead to a level decrease if
-    possible.
-
-    Args
-    ----
-    volatility:
-        A positive number describing the level change rate.
-    kwargs:
-        Keyword arguments for `PoissonBox`.
-
-    """
-
-    def __init__(self,
-        *,
-        volatility: float = 0.05,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        assert np.all(np.diff(self.taus)<=0), "Box qualities need to be set in increasing order."
-        self.volatility = volatility
-
-        self.param_names += ['volatility']
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.VolatileBox',
-            'volatility': self.volatility,
-        })
-        return spec
-
-    def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
-        if name=='volatility':
-            val, low, high = [self.volatility], [0], [np.inf]
-        else:
-            val, low, high = super()._get_param(name)
-        return val, low, high
-
-    def _set_param(self, name: str, val: EnvParam) -> None:
-        if name=='volatility':
-            assert len(val)==1
-            self.volatility = val[0]
-        else:
-            super()._set_param(name, val)
-
-    def draw_level(self) -> None:
-        self.level = self.rng.choice(self.num_levels)
-
-    def _reset(self) -> None:
-        self.food = False
-        self.draw_level()
-
-    def _step(self, push: bool) -> None:
-        if push: # penalty for incorrect push
-            if not self.food and self.level>0:
-                self.level -= 1
-        else: # box level changes randomly
-            p_change = 1-np.exp(-self.dt*self.volatility)
-            if self.rng.random()<p_change:
-                self.draw_level()
-        super()._step(push)
-
-
-class GammaLinearBox(BaseFoodBox):
+class GammaBox(BaseFoodBox):
     r"""Box updated by Gamma schedule and uses a linear cue.
 
     After each button push, a reward time interval is drawn from a Gamma
@@ -430,59 +292,50 @@ class GammaLinearBox(BaseFoodBox):
     Args
     ----
     tau:
-        Expectation of drawn reward intervals.
+        Expectation of reward intervals from a Gamma distribution.
     shape:
-        Shape parameter of the Gamma distribution to draw reward intervals.
-    max_interval:
-        The upper bound of drawn interval is `max_interval*dt`.
+        Shape parameter of the Gamma distribution.
+    kwargs:
+        Keyword arguments for `BaseFoodBox`.
 
     """
-
-    timer: int # time since last push, [0, interval]
 
     def __init__(self,
         tau: float = 14.,
         shape: float = 10.,
-        max_interval: int = 50,
         **kwargs,
     ):
-        super().__init__(num_levels=max_interval, **kwargs)
-        self.scale = tau/shape
         self.shape = shape
-        assert max_interval>=stats.gamma.ppf(0.95, self.shape, scale=self.scale)/self.dt, (
-            f"'max_interval' {max_interval} too small for "
-            f"the Gamma distribution ({self.shape}, {self.scale})"
-        )
-        self.state_space = MultiDiscrete([self._state_count(max_interval)])
-        self.param_names += ['tau']
+        super().__init__(tau, **kwargs)
 
-    def __repr__(self) -> str:
+        if self.cue_in_state:
+            self.state_space.spaces.update({
+                'drawn': Box(0, np.inf), 'timer': Box(0, np.inf),
+            })
+        else:
+            self.state_space['countdown'] = Box(-np.inf, np.inf)
+
+    def __str__(self) -> str:
         return f"Box with Gamma ({self.shape}, {self.scale}) schedule"
 
     @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.GammaLinearBox',
-            'shape': self.shape, 'scale': self.scale,
-        })
-        return spec
-
-    @property # max interval
-    def max_interval(self) -> int:
-        return self.num_levels
-
-    @property # drawn interval, [1, max_interval]
-    def interval(self) -> int:
-        return self.level
-    @interval.setter
-    def interval(self, val):
-        self.level = val
+    def food(self) -> bool:
+        if self.cue_in_state:
+            return self.timer>=self.drawn
+        else:
+            return self.countdown<=0
 
     @property
-    def food(self) -> bool:
-        r"""Returns food state based on current timer and level."""
-        return self.timer==self.level
+    def cue(self) -> float:
+        r"""Returns cue value based on current timer and level."""
+        return min(self.timer/self.drawn, 1.)
+
+    @property
+    def tau(self) -> float:
+        return self.scale*self.shape
+    @tau.setter
+    def tau(self, tau: float):
+        self.scale = tau/self.shape
 
     def _get_param(self, name: str) -> tuple[EnvParam, EnvParam, EnvParam]:
         if name=='tau':
@@ -498,167 +351,44 @@ class GammaLinearBox(BaseFoodBox):
         else:
             super()._set_param(name, val)
 
-    @staticmethod
-    def _state_count(max_interval: int) -> int:
-        r"""Returns total number of states up to given level.
-
-        `timer` ranges in `[0, interval]` and `interval` ranges in `[1, max_interval]`.
-
-        """
-        return max_interval*(max_interval+3)//2
-
-    @staticmethod
-    def _sub2idx(interval: int, timer: int) -> int:
-        r"""Converts tuple state to index.
-
-        Args
-        ----
-        interval:
-            Current drawn interval, in `[1, max_interval]`.
-        timer:
-            Current timer, ranging in `[0, level]`.
-
-        """
-        return GammaLinearBox._state_count(interval-1)+timer
-
-    @staticmethod
-    def _idx2sub(state_idx: int) -> tuple[int, int]:
-        r"""Converts state index to tuple.
-
-        Args
-        ----
-        state_idx:
-            An integer in `[0, state_count(num_levels))`.
-
-        Returns
-        -------
-        interval, timer:
-            Current drawn interval and timer corresponding to `state_idx`.
-
-        """
-        interval = 1
-        while GammaLinearBox._state_count(interval)<=state_idx:
-            interval += 1
-        timer = state_idx-GammaLinearBox._state_count(interval-1)
-        return interval, timer
-
-    def get_state(self) -> BoxState:
-        r"""Returns box state.
-
-        Box state is the index of the ordered sequence of all possible
-        `(interval, timer)` tuples.
-
-        """
-        state = (self._sub2idx(self.interval, self.timer),)
+    def get_state(self) -> dict[str, float]:
+        r"""Returns box state."""
+        state = super().get_state()
+        if self.cue_in_state:
+            state.update({
+                'drawn': np.array([self.drawn]),
+                'timer': np.array([self.timer]),
+            })
+        else:
+            state.update({
+                'countdown': np.array([self.countdown]),
+            })
         return state
 
-    def set_state(self, state: BoxState) -> None:
+    def set_state(self, state: dict[str, float]) -> None:
         r"""Sets box state."""
-        self.interval, self.timer = self._idx2sub(state[0])
-        self.render()
-
-    def render(self) -> None:
-        cue = self.timer/self.interval # color cue marks the progress towards reward
-        self.colors = self.get_colors(cue)
+        if self.cue_in_state:
+            self.drawn = float(state['drawn'].item())
+            assert self.drawn>=0
+            self.timer = float(state['timer'].item())
+            assert self.timer>=0
+        else:
+            self.countdown = float(state['countdown'].item())
+        super().set_state(state)
 
     def _reset(self) -> None:
         r"""Draws new reward interval from a Gamma distribution."""
-        interval = int(np.ceil(self.rng.gamma(self.shape, self.scale)/self.dt))
-        self.interval = min(interval, self.max_interval)
-        self.timer = 0
+        if self.cue_in_state:
+            self.drawn = self.rng.gamma(self.shape, self.scale)
+            self.timer = 0
+        else:
+            self.countdown = self.rng.gamma(self.shape, self.scale)
 
     def _step(self, push: bool) -> None:
         if push:
             self._reset()
         else:
-            self.timer = min(self.timer+1, self.interval)
-
-
-class LinearBoxStateEmbedder(BaseEmbedder):
-    r"""State embedder for linear color box state.
-
-    The box state is two integers `(interval, timer)`. Instead of encoding them
-    by huge one-hot vector(s), the embedder directly uses two float numbers as
-    feature, the scaled interval `interval/20` and progress `timer/interval`.
-
-    Args
-    ----
-    spaces:
-        A list containing only one `DiscreteVarSpace`, which is derived from
-        `GammaLinearBox` state space.
-
-    """
-
-    def __init__(self, spaces: list[DiscreteVarSpace]):
-        assert len(spaces)==1 and isinstance(spaces[0], DiscreteVarSpace)
-
-        max_interval = 0
-        while GammaLinearBox._state_count(max_interval)<spaces[0].n:
-            max_interval += 1
-        assert GammaLinearBox._state_count(max_interval)==spaces[0].n, (
-            f"Invalid space dimension ({spaces[0].n})"
-        )
-        self.max_interval = max_interval
-        super().__init__(spaces)
-        self.feat_dim = 2 # (level, timer)
-
-    def __repr__(self) -> str:
-        return f"Embedder for linear box with max interval {self.max_interval}."
-
-    @property
-    def spec(self) -> dict:
-        spec = super().spec
-        spec.update({
-            '_target_': 'hexarena.box.LinearBoxStateEmbedder',
-        })
-        return spec
-
-    def embed(self, xs: Tensor) -> Tensor:
-        feats = []
-        for x in xs:
-            interval, timer = GammaLinearBox._idx2sub(int(x.item()))
-            feats.append((interval/20, timer/interval))
-        feats = torch.tensor(feats, dtype=torch.float, device=xs.device)
-        return feats
-
-def belief2probs(
-    model: SamplingBeliefModel, beliefs: Tensor,
-):
-    r"""Converts belief vector to state probabilities of each box.
-
-    Args
-    ----
-    model:
-        A sampling-based belief model for the environment using `GammaLinearBox`.
-    beliefs: (num_samples, belief_dim)
-        A collection of beliefs for all boxes. Each belief vector is the
-        concatenation of individual belief for one box.
-
-    Returns
-    -------
-    p_boxes: (num_samples, num_boxes, num_levels, num_levels+1)
-        Probability values of all boxes, the last 2 dimension corresponding to
-        drawn interval and the internal timer, i.e., P(interval, timer).
-
-    """
-    n_boxes = model.env.num_boxes
-    n_levels = None
-    for i in range(n_boxes):
-        if n_levels is None:
-            n_levels = model.env.boxes[i].num_levels
-        else:
-            assert n_levels==model.env.boxes[i].num_levels
-    assert isinstance(model.env.boxes[0], GammaLinearBox)
-    n_samples, belief_dim = beliefs.shape
-    param_dim = belief_dim//n_boxes
-    p_boxes = np.zeros((n_samples, n_boxes, n_levels, n_levels+1)) # P(interval, timer) for all boxes
-    for i in range(n_boxes):
-        p_s = model.p_s.s_dists[i]
-        all_xs = p_s.all_xs
-        for t in range(n_samples):
-            param_vec = beliefs[t, i*param_dim:(i+1)*param_dim]
-            logps, _ = p_s.loglikelihoods(all_xs, param_vec)
-            for k in range(len(all_xs)):
-                interval, timer = model.env.boxes[i]._idx2sub(k)
-                p_boxes[t, i, interval-1, timer] = logps[k].exp().item()
-    return p_boxes
+            if self.cue_in_state:
+                self.timer += self.dt
+            else:
+                self.countdown -= self.dt

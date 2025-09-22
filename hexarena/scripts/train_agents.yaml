@@ -1,18 +1,14 @@
 apiVersion: batch/v1 # Jobs Default K8 API
 kind: Job # This tells kubernetes what kind of class it is working with
 metadata:
-  name: marco-1k-010-agents # Name of the Job
+  name: ppo-expo-001 # Name of the Job
 spec:
-  completions: 8
-  parallelism: 8
+  completions: 10
+  parallelism: 5
   template: # Pod Templete
-    metadata:
-      labels:
-        app: blender
     spec:
       restartPolicy: Never # Options are OnFailure, and Never.
       hostNetwork: true # This option will allow the pod to use the host network for internet access
-      priorityClassName: low-priority # Set the pod to be low priority meaning it will be evicted by default and higher priority pods
       volumes:
       - name: dshm
         emptyDir:
@@ -23,36 +19,33 @@ spec:
           path: /mnt/scratch09/zhe/hex-arena/data # Directory on the host machine to be mounted
       - name: store
         hostPath:
-          path: /mnt/scratch09/zhe/hex-arena/store_Jan2025
+          path: /mnt/scratch09/zhe/hex-arena/store_May2025
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: gpu_mem_size # Target label is gpu_mem_size
-                operator: NotIn # Key must have one of the following values
-                values:
-                - 12GB
-                - 24GB
-                - 32GB
               - key: kubernetes.io/hostname # Target label is gpu_mem_size
                 operator: NotIn # Key must have one of the following values
                 values:
+                - at-gencompute001
                 - at-gencompute002
                 - at-compute006 # calcium imaging
+                - at-compute011
                 - at-compute015 # light bead microscopy
                 - at-mlflow
+                - poirot
       containers: # Container Level
       - name: hex-arena # Container name
-        image: at-docker.stanford.edu:5000/zhe-hexarena
+        image: zheli21/hexarena
         imagePullPolicy: Always
         resources:
           requests:
-            cpu: 16
-            memory: 16G
+            cpu: 4
+            memory: 12G
           limits:
-            cpu: 20
-            memory: 32G
+            cpu: 8
+            memory: 24G
         volumeMounts: # Container reference to volumes define above
         - name: dshm
           mountPath: /dev/shm
@@ -65,5 +58,5 @@ spec:
           - "-c"
           - >
             python -u -m hexarena.scripts.train_agents
-            subject=marco kappa=0.1 num_samples=1000
-            max_wait=10
+            kappa=0.01 schedule=Expo
+            num_epochs=10 num_works=10 max_wait=10

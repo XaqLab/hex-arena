@@ -3,6 +3,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from jarvis.config import Config
+from jarvis.utils import cls_name
 
 from .alias import Array, Axes, Artist
 
@@ -31,8 +32,8 @@ class Arena:
             "'resol' needs to be an even number to allocate anchors on the center of walls."
         )
 
-        self.num_boxes = 3
-        self.num_tiles = 3*self.resol**2+3*self.resol+1
+        self.n_boxes = 3
+        self.n_tiles = 3*self.resol**2+3*self.resol+1
         anchors = []
         self.corners: list[int] = []
         self.boxes: list[int] = []
@@ -46,7 +47,7 @@ class Arena:
             r = i/self.resol
             for j in range(6):
                 theta = j/6*(2*np.pi)
-                x0, y0 = r*np.cos(theta), r*np.sin(theta)
+                x0, y0 = r*np.cos(theta).item(), r*np.sin(theta).item()
                 theta += 2*np.pi/3
                 for k in range(i):
                     t_idx = len(anchors)
@@ -58,18 +59,21 @@ class Arena:
                             self.boxes.append(t_idx)
                     else:
                         self.inners.append(t_idx)
-                    x = x0+k/self.resol*np.cos(theta)
-                    y = y0+k/self.resol*np.sin(theta)
+                    x = x0+k/self.resol*np.cos(theta).item()
+                    y = y0+k/self.resol*np.sin(theta).item()
                     anchors.append((x, y))
         self.anchors: tuple[tuple[float, float]] = tuple(anchors)
 
     def __repr__(self) -> str:
-        return f"Arena of size {self.resol} with {self.num_boxes} boxes"
+        return "{}(resol={})".format(self.__class__.__name__, self.resol)
+
+    def __str__(self) -> str:
+        return f"Arena of size {self.resol} with {self.n_boxes} boxes"
 
     @property
     def spec(self) -> dict:
         return {
-            '_target_': 'hexarena.arena.Arena',
+            '_target_': cls_name(self),
             'resol': self.resol,
         }
 
@@ -115,7 +119,7 @@ class Arena:
                         for l in range(-1 if k==0 else 0, 3):
                             append_seg(x, y, theta+l*np.pi/3)
         for segment in segments:
-            ax.plot(segment[0], segment[1], color='silver', linestyle='--', linewidth=0.5)
+            ax.plot(segment[0], segment[1], color='silver', linestyle='--', linewidth=1/self.resol)
 
         ax.set_xlim([-1.1, 1.1])
         ax.set_ylim([-1.1, 1.1])
@@ -134,7 +138,8 @@ class Arena:
         ax:
             Axis to plot on.
         tile_idx:
-            Index of tile to color, in [0, num_tiles).
+            Index of tile to color, in `[-1, num_tiles)` with '-1' for missing
+            data.
         color:
             The desired tile color.
         size:
@@ -165,6 +170,7 @@ class Arena:
     def plot_map(self,
         ax: Axes,
         vals: Array,
+        door: bool = False,
         cmap: str = 'YlOrBr',
         vmin: float = 0,
         vmax: float|None = None,
@@ -195,26 +201,38 @@ class Arena:
         """
         cbar_kw = Config(cbar_kw).fill({
             'fraction': 0.1, 'shrink': 0.8, 'pad': 0.05,
-            'orientation': 'horizontal', 'location': 'top',
+            'orientation': 'horizontal', 'location': 'bottom', 'disable': False,
         })
+        disable_pbar = cbar_kw.pop('disable')
         vals = np.array(vals)
-        assert len(vals)==self.num_tiles
+        assert len(vals)==self.n_tiles
         assert np.all(vals>=0)
         cmap = plt.get_cmap(cmap)
         if vmax is None:
             vmax = vals.max()
         self.plot_mesh(ax)
+        if door:
+            x = [np.cos(np.pi/3), 1]
+            y = [-np.sin(np.pi/3), 0]
+            p = 0.35
+            ax.plot(
+                [(1-p)*x[0]+p*x[1], p*x[0]+(1-p)*x[1]],
+                [(1-p)*y[0]+p*y[1], p*y[0]+(1-p)*y[1]],
+                color='dimgray', linewidth=5,
+            )
+
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         if h_tiles is None:
             h_tiles = []
-            for i in range(self.num_tiles):
+            for i in range(self.n_tiles):
                 h_tiles.append(self.plot_tile(ax, i, cmap(norm(vals[i]))))
-            plt.colorbar(
-                mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
-            )
+            if not disable_pbar:
+                plt.colorbar(
+                    mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, **cbar_kw,
+                )
         else:
-            assert len(h_tiles)==self.num_tiles
-            for i in range(self.num_tiles):
+            assert len(h_tiles)==self.n_tiles
+            for i in range(self.n_tiles):
                 self.plot_tile(ax, i, cmap(norm(vals[i])), h_tile=h_tiles[i])
         return h_tiles
 

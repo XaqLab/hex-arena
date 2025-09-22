@@ -1,4 +1,4 @@
 docker run -it --rm --pull always -p 8888:8888 \
     --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/data,destination=/hex-arena/data \
-    --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/store_Jan2025,destination=/hex-arena/store \
-    registry.atlab.stanford.edu:5000/zhe-hexarena
+    --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/store,destination=/hex-arena/store \
+    zheli21/hexarena
