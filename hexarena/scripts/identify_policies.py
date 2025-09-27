@@ -62,7 +62,7 @@ def create_manager(
           - block_ids: list[tuple[str, int]]
           - seed: int           # random seed for HMP initialization
           - split: float        # portion of training time steps in each block
-          - n_policies: int   # number of policies
+          - n_policies: int     # number of policies
           - policy: dict        # config of policy network
             - num_features: list[int]   # hidden layer sizes
             - nonlinearity: str         # nonlinearity
