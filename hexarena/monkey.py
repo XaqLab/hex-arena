@@ -1,6 +1,6 @@
 import numpy as np
 from collections.abc import Iterable
-from gymnasium.spaces import Discrete, MultiDiscrete, Dict
+from gymnasium.spaces import Discrete, Dict
 from jarvis.config import Config
 
 from .arena import Arena
