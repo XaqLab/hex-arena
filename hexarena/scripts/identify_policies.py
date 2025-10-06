@@ -1,18 +1,17 @@
 from pathlib import Path
 import pickle
-import torch
 import numpy as np
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
-from jarvis.utils import tqdm, tensor2array, array2tensor
-from irc.hmp import HiddenMarkovPolicy
+from jarvis.utils import tensor2array, array2tensor
+from irc.hmm import HiddenMarkovPolicy
 
 from .. import STORE_DIR
 
 
 def create_manager(
     subject: str, data_pth: Path|None = None, kappas: list[float]|None = None,
-    save_interval: int = 1, patience: float = 1.,
+    save_interval: int = 10, patience: float = 1.,
 ) -> Manager:
     r"""Creates a manager for policy identification.
 
@@ -28,7 +27,10 @@ def create_manager(
     if data_pth is None:
         data_pth = STORE_DIR/f'{subject}.mean.beliefs.pkl'
     if kappas is None:
-        kappas = [0.01]
+        if subject in ['marco', 'dylan']:
+            kappas = [0.01, 0.1]
+        if subject in ['viktor']:
+            kappas = [0.01, 0.2]
     manager = Manager(
         STORE_DIR/'policies'/subject, save_interval=save_interval, patience=patience,
     )
@@ -39,19 +41,20 @@ def create_manager(
         if block_info['kappa'] in kappas:
             manager.block_ids.append(block_id)
     manager.block_ids = sorted(manager.block_ids)
-    n_blocks = len(manager.block_ids)
     manager.inputs = [saved['inputs'][block_id] for block_id in manager.block_ids]
     input_dim = np.unique([v.shape[1] for v in manager.inputs]).item()
     manager.actions = [saved['actions'][block_id] for block_id in manager.block_ids]
     n_actions = saved['n_actions']
 
     manager.default = {
-        'data_pth': data_pth.name,
-        'block_ids': manager.block_ids,
-        'seed': 0, 'split': 0.9, 'n_policies': 2,
+        'data_pth': data_pth.name, 'block_ids': manager.block_ids,
+        'n_policies': 2,
         'policy': {'num_features': [], 'nonlinearity': 'Softplus'},
-        'reg_coefs': {
-            'alpha_A': 100., 'off_ratio': 0.1, 'l2_reg': 1e-3, 'ent_reg': 1e-4,
+        'lr': 0.01,
+        'reset': {'seed': 0, 'alpha_A': 5.},
+        'learn': {
+            'max_steps': 800, 'batch_size': 32,
+            'l2_reg': 0.001, 'jsd_reg': 10., 'switch_reg': 10.,
         },
     }
 
@@ -60,17 +63,20 @@ def create_manager(
         config:
           - data_pth: str
           - block_ids: list[tuple[str, int]]
-          - seed: int           # random seed for HMP initialization
-          - split: float        # portion of training time steps in each block
           - n_policies: int     # number of policies
-          - policy: dict        # config of policy network
+          - policy: dict    # config of policy network
             - num_features: list[int]   # hidden layer sizes
             - nonlinearity: str         # nonlinearity
-          - reg_coefs: dict     # regularization coefficients, see `m_step`
-            - alpha_A: float
-            - off_ratio: float
+          - lr: float       # learning rate of Adam optimizer
+          - reset: dict     # arguments of `HiddenMarkovPolicy.reset`
+            - seed: int         # random seed for HMP initialization
+            - alpha_A: float    # diagonal prior of transition matrix
+          - learn: dict     # arguments of `HiddenMarkovPolicy.learn`
+            - max_steps: int
+            - batch_size: int
             - l2_reg: float
-            - ent_reg: float
+            - jsd_reg: float
+            - switch_reg: float
 
         """
         assert config.data_pth==data_pth.name, (
@@ -83,47 +89,35 @@ def create_manager(
         manager.hmp = HiddenMarkovPolicy(
             config.n_policies, input_dim, n_actions, config.policy,
         )
-        manager.hmp.reset(config.seed)
-        return float('inf') # no limit on EM iterations
-    def training_tensors():
-        split = manager.config.split
-        inputs, actions = [], []
-        for i in range(n_blocks):
-            t_train = int(len(manager.actions[i])*split)
-            inputs.append(manager.inputs[i][:t_train])
-            actions.append(manager.actions[i][:t_train])
-        return inputs, actions
+        manager.optimizer = manager.hmp.default_optimizer(config.lr)
+        return float('inf')
     def reset():
-        manager.hmp.reset(manager.config.seed)
-        manager.Ps, manager.As, manager.losses = [], [], []
-        manager.gammas = [[] for _ in range(n_blocks)]
-        manager.log_Zs = []
+        manager.hmp.reset(**manager.config.reset)
+        manager.losses, manager.last_state = [], None
+        manager.min_loss, manager.best_state = float('inf'), None
     def step():
-        # training set only
-        inputs, actions = training_tensors()
-        hmp, reg_coefs = manager.hmp, manager.config.reg_coefs
-        _, _, log_gammas, log_xis, log_Z = hmp.e_step(inputs, actions)
-        for i in range(n_blocks):
-            manager.gammas[i].append(log_gammas[i].data.exp().cpu())
-        manager.log_Zs.append(log_Z)
-        stats = hmp.m_step(
-            inputs, actions, log_gammas, log_xis,  **reg_coefs,
+        losses, states, min_loss, _, manager.optimizer = manager.hmp.learn(
+            manager.inputs, manager.actions, manager.optimizer,
+            n_epochs=1, pbar_kw={'disable': True}, **manager.config.learn,
         )
-        manager.Ps.append(hmp.log_P.data.exp())
-        manager.As.append(hmp.log_A.data.exp())
-        manager.losses.append(stats['losses_val'][stats['best_epoch']])
-        return 'LL {:.3f}'.format(-manager.losses[-1][0])
+        manager.losses.append(losses)
+        manager.last_state = states[-1]
+        if min_loss<manager.min_loss:
+            manager.min_loss = min_loss
+            manager.best_state = states[-1]
+        return 'LL {:.3f}'.format(losses[-1][0])
     def get_ckpt():
-        return tensor2array({
-            'state_dict': manager.hmp.state_dict(),
-            'Ps': manager.Ps, 'As': manager.As, 'losses': manager.losses,
-            'gammas': manager.gammas, 'log_Zs': manager.log_Zs,
-        })
+        ckpt = {
+            k: getattr(manager, k) for k in ['losses', 'last_state', 'min_loss', 'best_state']
+        }
+        ckpt['optimizer'] = manager.optimizer.state_dict()
+        return tensor2array(ckpt)
     def load_ckpt(ckpt):
-        ckpt = array2tensor(ckpt, manager.hmp.device)
-        manager.hmp.load_state_dict(ckpt['state_dict'])
-        for key in ['Ps', 'As', 'losses', 'gammas', 'log_Zs']:
+        ckpt = array2tensor(ckpt)
+        manager.hmp.load_state_dict(ckpt['last_state'])
+        for key in ['losses', 'min_loss', 'best_state']:
             setattr(manager, key, ckpt[key])
+        manager.optimizer.load_state_dict(ckpt['optimizer'])
         return len(manager.losses)
     manager.setup = setup
     manager.reset = reset
@@ -134,10 +128,10 @@ def create_manager(
 
 
 def main(
-    data_pth: Path|str, kappas: list[float]|float,
+    data_pth: Path|str, kappas: list[float]|float|None = None,
     choices: dict|Path|str|None = None,
-    num_epochs: int = 50,
-    num_works: int|None = None,
+    n_epochs: int = 500,
+    n_works: int|None = None,
     **kwargs,
 ):
     r"""Train hidden Markov models to identify distinct policies.
@@ -180,24 +174,22 @@ def main(
     manager = create_manager(subject, data_pth, kappas, **kwargs)
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
-            'seed': list(range(6)),
-            'n_policies': [1, 2, 3, 4, 5, 6],
+            'n_policies': [2, 3, 4],
             'policy.num_features': [[], [16]],
-            'reg_coefs': {
-                'alpha_A': [1., 1e2, 1e4],
-                'off_ratio': [0.9, 0.3, 0.1],
-                'l2_reg': [1e-2, 1e-3, 1e-4],
-                'ent_reg': [1e-2, 1e-3, 1e-4]
+            'reset': {
+                'seed': list(range(6)),
+                'alpha_A': [1., 3., 5.],
             },
+            'learn': {
+                'jsd_reg': [10., 20., 50.],
+                'switch_reg': [10., 20., 50.],
+            }
         })
     configs = choices2configs(choices)
-    manager.batch(
-        configs, num_epochs, num_works, process_kw={'pbar_kw.unit': 'iter'},
-    )
+    manager.batch(configs, n_epochs, n_works)
 
 
 if __name__=='__main__':
     main(**from_cli().fill({
         'data_pth': 'marco.mean.beliefs.pkl',
-        'kappas': [0.01, 0.1],
     }))
