@@ -116,7 +116,7 @@ def main(
     tau_in_state: bool = False,
     n_samples: int = 2000,
     n_seeds: int = 6,
-    num_works: int|None = None,
+    n_works: int|None = None,
     **kwargs,
 ):
     r"""Computes beliefs for Poisson boxes.
@@ -132,6 +132,10 @@ def main(
         Whether to include box quality 'tau' in the box state.
     n_samples:
         Number of samples used in belief estimation.
+    n_seeds:
+        Number of random seeds used.
+    n_works:
+        Number of works to be processed, see `Manager.batch` for more details.
     kwargs:
         Keyword arguments of the manager, see `Manager` for more details.
 
@@ -148,7 +152,7 @@ def main(
     }) for session_id, block_idx in block_ids for seed in range(n_seeds)]
     np.random.default_rng().shuffle(configs)
     manager.batch(
-        configs, num_works=num_works,
+        configs, n_works=n_works,
         pbar_kw={'unit': 'block', 'leave': True},
         process_kw={'pbar_kw': {'unit': 'steps'}},
     )
