@@ -1,6 +1,7 @@
 from pathlib import Path
 import pickle
 import numpy as np
+import torch
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
 from jarvis.utils import tensor2array, array2tensor
@@ -11,7 +12,7 @@ from .. import STORE_DIR
 
 def create_manager(
     subject: str, data_pth: Path|None = None, kappas: list[float]|None = None,
-    save_interval: int = 10, patience: float = 1.,
+    device: str = 'cuda', save_interval: int = 10, patience: float = 1.,
 ) -> Manager:
     r"""Creates a manager for policy identification.
 
@@ -31,30 +32,43 @@ def create_manager(
             kappas = [0.01, 0.1]
         if subject in ['viktor']:
             kappas = [0.01, 0.2]
+    device = device if torch.cuda.is_available() else 'cpu'
     manager = Manager(
         STORE_DIR/'policies'/subject, save_interval=save_interval, patience=patience,
     )
+
+    # split blocks to train/val
     with open(data_pth, 'rb') as f:
         saved = array2tensor(pickle.load(f))
-    manager.block_ids = []
+    block_ids = []
     for block_id, block_info in saved['block_infos'].items():
         if block_info['kappa'] in kappas:
-            manager.block_ids.append(block_id)
-    manager.block_ids = sorted(manager.block_ids)
-    manager.inputs = [saved['inputs'][block_id] for block_id in manager.block_ids]
-    input_dim = np.unique([v.shape[1] for v in manager.inputs]).item()
-    manager.actions = [saved['actions'][block_id] for block_id in manager.block_ids]
+            block_ids.append(block_id)
+    block_ids = sorted(block_ids)
+    n_blocks = len(block_ids)
+    idxs = np.random.default_rng(0).permutation(n_blocks)
+    _n = int(n_blocks*0.1)
+    idxs = {'train': idxs[_n:], 'val': idxs[:_n]}
+    block_ids = {tag: [block_ids[i] for i in idxs[tag]] for tag in idxs}
+    manager.block_ids = block_ids
+
+    # prepare datasets
+    manager.dsets = {tag: [
+        (saved['inputs'][block_id], saved['actions'][block_id])
+        for block_id in block_ids[tag]
+    ] for tag in block_ids}
+    _, input_dim = manager.dsets['train'][0][0].shape
     n_actions = saved['n_actions']
 
     manager.default = {
-        'data_pth': data_pth.name, 'block_ids': manager.block_ids,
+        'data_pth': data_pth.name, 'block_ids': block_ids,
         'n_policies': 2,
         'policy': {'num_features': [], 'nonlinearity': 'Softplus'},
         'lr': 0.01,
         'reset': {'seed': 0, 'alpha_A': 5.},
         'learn': {
             'max_steps': 800, 'batch_size': 32,
-            'l2_reg': 0.001, 'jsd_reg': 10., 'switch_reg': 10.,
+            'l2_reg': 0.001, 'jsd_reg': 0., 'switch_reg': 0.,
         },
     }
 
@@ -62,7 +76,7 @@ def create_manager(
         r"""
         config:
           - data_pth: str
-          - block_ids: list[tuple[str, int]]
+          - block_ids: dict[str, list[tuple[str, int]]]
           - n_policies: int     # number of policies
           - policy: dict    # config of policy network
             - num_features: list[int]   # hidden layer sizes
@@ -72,11 +86,11 @@ def create_manager(
             - seed: int         # random seed for HMP initialization
             - alpha_A: float    # diagonal prior of transition matrix
           - learn: dict     # arguments of `HiddenMarkovPolicy.learn`
-            - max_steps: int
-            - batch_size: int
             - l2_reg: float
             - jsd_reg: float
             - switch_reg: float
+            - max_steps: int
+            - batch_size: int
 
         """
         assert config.data_pth==data_pth.name, (
@@ -93,20 +107,24 @@ def create_manager(
         return float('inf')
     def reset():
         manager.hmp.reset(**manager.config.reset)
-        manager.losses, manager.last_state = [], None
+        manager.losses, manager.last_state = None, None
         manager.min_loss, manager.best_epoch, manager.best_state = float('inf'), None, None
     def step():
-        losses, states, min_loss, _, manager.optimizer = manager.hmp.learn(
-            manager.inputs, manager.actions, manager.optimizer,
-            n_epochs=1, pbar_kw={'disable': True}, **manager.config.learn,
+        losses, states, loss, _, manager.optimizer = manager.hmp.learn(
+            manager.dsets, manager.optimizer, n_epochs=1,
+            pbar_kw={'disable': True}, **manager.config.learn,
         )
-        manager.losses.append(losses)
+        if manager.losses is None:
+            manager.losses = {tag: [losses[tag]] for tag in losses}
+        else:
+            for tag in manager.losses:
+                manager.losses[tag].append(losses[tag])
         manager.last_state = states[-1]
-        if min_loss<manager.min_loss:
-            manager.min_loss = min_loss
-            manager.best_epoch = len(manager.losses)-1
+        if loss<manager.min_loss:
+            manager.min_loss = loss
+            manager.best_epoch = len(manager.losses['val'])-1
             manager.best_state = states[-1]
-        return 'LL {:.3f}'.format(losses[-1][0])
+        return 'LL {:.3f}'.format(losses['val'][-1][0])
     def get_ckpt():
         ckpt = {
             k: getattr(manager, k) for k in [
@@ -184,8 +202,8 @@ def main(
                 'alpha_A': [1., 3., 5.],
             },
             'learn': {
-                'jsd_reg': [10., 20., 50.],
-                'switch_reg': [10., 20., 50.],
+                'jsd_reg': [0., 10., 20., 50.],
+                'switch_reg': [0., 10., 20., 50.],
             }
         })
     configs = choices2configs(choices)
