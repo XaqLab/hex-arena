@@ -53,22 +53,21 @@ def create_manager(
     manager.block_ids = block_ids
 
     # prepare datasets
-    manager.dsets = {tag: [
+    manager.raw_dsets = {tag: [
         (saved['inputs'][block_id], saved['actions'][block_id])
         for block_id in block_ids[tag]
     ] for tag in block_ids}
-    _, input_dim = manager.dsets['train'][0][0].shape
     n_actions = saved['n_actions']
 
     manager.default = {
         'data_pth': data_pth.name, 'block_ids': block_ids,
-        'n_policies': 2,
+        'belief_aware': True, 'n_policies': 2,
         'policy': {'num_features': [], 'nonlinearity': 'Softplus'},
         'lr': 0.01,
         'reset': {'seed': 0, 'alpha_A': 5.},
         'learn': {
             'max_steps': 800, 'batch_size': 32,
-            'l2_reg': 0.001, 'jsd_reg': 0., 'switch_reg': 0.,
+            'l2_reg': 1., 'jsd_reg': 0., 'switch_reg': 0.,
         },
     }
 
@@ -77,6 +76,7 @@ def create_manager(
         config:
           - data_pth: str
           - block_ids: dict[str, list[tuple[str, int]]]
+          - belief_aware: bool  # whether to use belief as inputs
           - n_policies: int     # number of policies
           - policy: dict    # config of policy network
             - num_features: list[int]   # hidden layer sizes
@@ -100,6 +100,15 @@ def create_manager(
             "Block IDs inconsistent with current manager"
         )
         manager.config = config
+        manager.dsets = {}
+        for tag in manager.raw_dsets:
+            manager.dsets[tag] = []
+            for inputs, actions in manager.raw_dsets[tag]:
+                if config.belief_aware:
+                    manager.dsets[tag].append((torch.atanh(inputs), actions))
+                else:
+                    manager.dsets[tag].append((torch.zeros((len(inputs), 0)), actions))
+        _, input_dim = manager.dsets['train'][0][0].shape
         manager.hmp = HiddenMarkovPolicy(
             config.n_policies, input_dim, n_actions, config.policy,
         )
@@ -195,6 +204,7 @@ def main(
     manager = create_manager(subject, data_pth, kappas, **kwargs)
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
+            'belief_aware': [False, True],
             'n_policies': [2, 3, 4],
             'policy.num_features': [[], [16]],
             'reset': {
