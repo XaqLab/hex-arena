@@ -148,7 +148,7 @@ def create_manager(
         for key in ['losses', 'min_loss', 'best_epoch', 'best_state']:
             setattr(manager, key, ckpt[key])
         manager.optimizer.load_state_dict(ckpt['optimizer'])
-        return len(manager.losses)
+        return len(manager.losses['val'])
     manager.setup = setup
     manager.reset = reset
     manager.step = step
