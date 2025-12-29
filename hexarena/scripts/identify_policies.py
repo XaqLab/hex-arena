@@ -205,7 +205,7 @@ def main(
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
             'belief_aware': [False, True],
-            'n_policies': [2, 3, 4],
+            'n_policies': [1, 2, 3, 4],
             'policy.num_features': [[], [16]],
             'reset': {
                 'seed': list(range(6)),
@@ -216,7 +216,13 @@ def main(
                 'switch_reg': [0., 10., 20., 50.],
             }
         })
-    configs = choices2configs(choices)
+    configs = []
+    for config in choices2configs(choices):
+        if config.n_policies==1:
+            config.update({'learn': {'jsd_reg': 0, 'switch_reg': 0}})
+        if not config.belief_aware:
+            config.policy = {}
+        configs.append(config)
     manager.batch(configs, n_epochs, n_works)
 
 
