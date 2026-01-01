@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from jarvis.config import from_cli, choices2configs, Config
 from jarvis.manager import Manager
-from jarvis.utils import tensor2array, array2tensor
+from jarvis.utils import tensor2array, array2tensor, get_defaults
 from irc.hmm import HiddenMarkovPolicy
 
 from .. import STORE_DIR
@@ -64,11 +64,9 @@ def create_manager(
         'belief_aware': True, 'n_policies': 2,
         'policy': {'num_features': [], 'nonlinearity': 'Softplus'},
         'lr': 0.01,
-        'reset': {'seed': 0, 'alpha_A': 5.},
-        'learn': {
-            'max_steps': 800, 'batch_size': 32,
-            'l2_reg': 1., 'jsd_reg': 0., 'switch_reg': 0.,
-        },
+        'reset': {'seed': 0, 'alpha_A': 0.},
+        'learn': get_defaults(HiddenMarkovPolicy.learn, ['l2_reg', 'A_reg']) \
+            |get_defaults(HiddenMarkovPolicy.train_one_batch, ['max_steps', 'batch_size']),
     }
 
     def setup(config: Config):
@@ -87,8 +85,7 @@ def create_manager(
             - alpha_A: float    # diagonal prior of transition matrix
           - learn: dict     # arguments of `HiddenMarkovPolicy.learn`
             - l2_reg: float
-            - jsd_reg: float
-            - switch_reg: float
+            - A_reg: float
             - max_steps: int
             - batch_size: int
 
@@ -205,21 +202,19 @@ def main(
     if choices is None or isinstance(choices, dict):
         choices = Config(choices).fill({
             'belief_aware': [False, True],
-            'n_policies': [1, 2, 3, 4],
-            'policy.num_features': [[], [16]],
+            'n_policies': [1, 2, 3, 4, 5],
+            'policy.num_features': [[16]],
             'reset': {
                 'seed': list(range(6)),
-                'alpha_A': [1., 3., 5.],
             },
             'learn': {
-                'jsd_reg': [0., 10., 20., 50.],
-                'switch_reg': [0., 10., 20., 50.],
-            }
+                'A_reg': [1e-4, 1e-3, 1e-2, 0.1, 1., 10.],
+            },
         })
     configs = []
     for config in choices2configs(choices):
         if config.n_policies==1:
-            config.update({'learn': {'jsd_reg': 0, 'switch_reg': 0}})
+            config.update({'learn': {'A_reg': 0}})
         if not config.belief_aware:
             config.policy = {}
         configs.append(config)
