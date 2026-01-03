@@ -102,7 +102,7 @@ def create_manager(
             manager.dsets[tag] = []
             for inputs, actions in manager.raw_dsets[tag]:
                 if config.belief_aware:
-                    manager.dsets[tag].append((torch.atanh(inputs), actions))
+                    manager.dsets[tag].append((torch.atanh(inputs*2-1), actions))
                 else:
                     manager.dsets[tag].append((torch.zeros((len(inputs), 0)), actions))
         _, input_dim = manager.dsets['train'][0][0].shape
