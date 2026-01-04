@@ -64,7 +64,7 @@ def create_manager(
         'belief_aware': True, 'n_policies': 2,
         'policy': {'num_features': [], 'nonlinearity': 'Softplus'},
         'lr': 0.01,
-        'reset': {'seed': 0, 'alpha_A': 0.},
+        'seed': 0,
         'learn': get_defaults(HiddenMarkovPolicy.learn, ['l2_reg', 'A_reg']) \
             |get_defaults(HiddenMarkovPolicy.train_one_batch, ['max_steps', 'batch_size']),
     }
@@ -80,9 +80,7 @@ def create_manager(
             - num_features: list[int]   # hidden layer sizes
             - nonlinearity: str         # nonlinearity
           - lr: float       # learning rate of Adam optimizer
-          - reset: dict     # arguments of `HiddenMarkovPolicy.reset`
-            - seed: int         # random seed for HMP initialization
-            - alpha_A: float    # diagonal prior of transition matrix
+          - seed: int       # random seed for HMP initialization
           - learn: dict     # arguments of `HiddenMarkovPolicy.learn`
             - l2_reg: float
             - A_reg: float
@@ -112,7 +110,7 @@ def create_manager(
         manager.optimizer = manager.hmp.default_optimizer(config.lr)
         return float('inf')
     def reset():
-        manager.hmp.reset(**manager.config.reset)
+        manager.hmp.reset(seed=manager.config.seed)
         manager.losses, manager.last_state = None, None
         manager.min_loss, manager.best_epoch, manager.best_state = float('inf'), None, None
     def step():
@@ -204,9 +202,7 @@ def main(
             'belief_aware': [False, True],
             'n_policies': [1, 2, 3, 4, 5],
             'policy.num_features': [[16]],
-            'reset': {
-                'seed': list(range(6)),
-            },
+            'seed': list(range(6)),
             'learn': {
                 'A_reg': [1e-4, 1e-3, 1e-2, 0.1, 1., 10.],
             },
