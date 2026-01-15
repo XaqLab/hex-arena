@@ -113,8 +113,9 @@ def create_manager(
         manager.hmp.reset(seed=manager.config.seed)
         manager.losses, manager.last_state = None, None
         manager.min_loss, manager.best_epoch, manager.best_state = float('inf'), None, None
+        manager.log_gammas, manager.log_xis = None, None
     def step():
-        losses, states, loss, _, manager.optimizer = manager.hmp.learn(
+        losses, log_gammas, log_xis, states, loss, _, manager.optimizer = manager.hmp.learn(
             manager.dsets, manager.optimizer, n_epochs=1,
             pbar_kw={'disable': True}, **manager.config.learn,
         )
@@ -128,20 +129,22 @@ def create_manager(
             manager.min_loss = loss
             manager.best_epoch = len(manager.losses['val'])-1
             manager.best_state = states[-1]
+            manager.log_gammas = log_gammas[-1]
+            manager.log_xis = log_xis[-1]
         return 'LL {:.3f}'.format(losses['val'][-1][0])
+    attr_names = [
+        'losses', 'last_state', 'min_loss', 'best_epoch', 'best_state', 'log_gammas', 'log_xis',
+    ]
     def get_ckpt():
-        ckpt = {
-            k: getattr(manager, k) for k in [
-                'losses', 'last_state', 'min_loss', 'best_epoch', 'best_state',
-            ]
-        }
+        ckpt = {k: getattr(manager, k) for k in attr_names}
         ckpt['optimizer'] = manager.optimizer.state_dict()
         return tensor2array(ckpt)
     def load_ckpt(ckpt):
         ckpt = array2tensor(ckpt)
-        manager.hmp.load_state_dict(ckpt['last_state'])
-        for key in ['losses', 'min_loss', 'best_epoch', 'best_state']:
-            setattr(manager, key, ckpt[key])
+        for key in attr_names:
+            if key in ckpt:
+                setattr(manager, key, ckpt[key])
+        manager.hmp.load_state_dict(manager.last_state)
         manager.optimizer.load_state_dict(ckpt['optimizer'])
         return len(manager.losses['val'])
     manager.setup = setup
