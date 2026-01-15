@@ -129,8 +129,8 @@ def create_manager(
             manager.min_loss = loss
             manager.best_epoch = len(manager.losses['val'])-1
             manager.best_state = states[-1]
-            manager.log_gammas = log_gammas[-1]
-            manager.log_xis = log_xis[-1]
+            manager.log_gammas = log_gammas['val'][-1]
+            manager.log_xis = log_xis['val'][-1]
         return 'LL {:.3f}'.format(losses['val'][-1][0])
     attr_names = [
         'losses', 'last_state', 'min_loss', 'best_epoch', 'best_state', 'log_gammas', 'log_xis',
