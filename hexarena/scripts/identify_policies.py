@@ -183,9 +183,8 @@ def main(
     choices:
         Job specifications, corresponding to a dictionary with keys of 'config'.
         See `setup` in `create_manager` for more details.
-    num_epochs, num_works:
+    n_epochs, n_works:
         Arguments for batch processing, see `Manager.batch` for more details.
-        `num_epochs` is the number of EM iterations in HMP learning.
     kwargs:
         Keyword arguments of the manager, see `Manager` for more details.
 
