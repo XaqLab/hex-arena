@@ -1,5 +1,6 @@
 *.pyc
 hexarena.egg-info
+.vscode
 .ipynb_checkpoints
 data
 store
