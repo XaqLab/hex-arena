@@ -1,6 +1,7 @@
 *.pyc
-hexarena.egg-info
+.vscode
 .ipynb_checkpoints
+hexarena.egg-info
 data
 store
 figures

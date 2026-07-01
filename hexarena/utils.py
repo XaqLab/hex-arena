@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 import h5py
 import numpy as np
-from irc.utils import ProgressBarCallback as _ProgressBarCallback
+from irc.utils.ppo import ProgressBarCallback as _ProgressBarCallback
 
 from . import DATA_DIR
 from .alias import Array

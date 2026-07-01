@@ -2,7 +2,7 @@ import os
 import yaml
 from pathlib import Path
 
-__version__ = '0.1.2'
+__version__ = "0.2.0"
 
 def _update_pths(dir_strs: list[str]) -> list[Path]:
     dir_pths = []
