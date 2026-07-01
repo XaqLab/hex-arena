@@ -533,7 +533,7 @@ class ArenaForagingEnv(BaseForagingEnv):
 
         # when a box is pushed, monkey location is forced to be at the tile
         for i in range(n_steps):
-            if env_data['push'][i]>=0:
+            if pos[i+1]>=0 and env_data['push'][i]>=0: # missing data will not be filled
                 pos[i+1] = self.arena.boxes[env_data['push'][i]]
 
         env_data.update({'pos': pos, 'gaze': gaze})
