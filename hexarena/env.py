@@ -773,6 +773,7 @@ class ArenaForagingEnv(BaseForagingEnv):
         tmin: int|None = None, tmax: int|None = None,
         figsize: tuple[float, float]|None = None,
         use_sec: bool = True,
+        **kwargs,
     ) -> tuple[Figure, FuncAnimation]:
         r"""Creates animation of one episode.
 
