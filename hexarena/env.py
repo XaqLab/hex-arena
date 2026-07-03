@@ -150,37 +150,47 @@ class BaseForagingEnv(Env):
             info['colors'] = np.stack([box.colors for box in self.boxes])
         return observation, info
 
-    def get_param(self) -> EnvParam:
-        r"""Returns environment parameters."""
-        param = self.monkey.get_param()
+    def get_param_r(self) -> EnvParam:
+        return self.monkey.get_param()
+    def set_param_r(self, param_r: EnvParam) -> None:
+        self.monkey.set_param(param_r)
+
+    def get_param_d(self) -> EnvParam:
+        param_d = []
         for name in self.shared_param_names:
             val, *_ = self.boxes[0]._get_param(name)
-            param += val
+            param_d += val
         for box in self.boxes:
             for name in box.param_names:
                 if name not in self.shared_param_names:
                     val, *_ = box._get_param(name)
-                    param += val
-        return param
-
-    def set_param(self, param: EnvParam) -> None:
-        r"""Sets environment parameter."""
-        n = len(self.monkey.get_param())
-        self.monkey.set_param(param[:n])
-        c = n
+                    param_d += val
+        return param_d
+    def set_param_d(self, param_d: EnvParam) -> None:
+        c = 0
         for name in self.shared_param_names:
             val, *_ = self.boxes[0]._get_param(name)
             n = len(val)
             for box in self.boxes:
-                box._set_param(name, param[c:c+n])
+                box._set_param(name, param_d[c:c+n])
             c += n
         for box in self.boxes:
             for name in box.param_names:
                 if name not in self.shared_param_names:
                     val, *_ = box._get_param(name)
                     n = len(val)
-                    box._set_param(name, param[c:c+n])
+                    box._set_param(name, param_d[c:c+n])
                     c += n
+
+    def get_param(self) -> EnvParam:
+        r"""Returns environment parameters."""
+        param = self.get_param_r()+self.get_param_d()
+        return param
+    def set_param(self, param: EnvParam) -> None:
+        r"""Sets environment parameter."""
+        n = len(self.get_param_r())
+        self.set_param_r(param[:n])
+        self.set_param_d(param[n:])
 
     def param_bounds(self) -> tuple[EnvParam, EnvParam]:
         r"""Returns lower and upper bound of environment parameters."""
