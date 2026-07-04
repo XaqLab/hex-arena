@@ -121,7 +121,7 @@ class BaseMonkey:
         return {}
 
     def set_state(self, state: dict) -> None:
-        assert state=={}
+        assert len(state)==0
 
 
 class ArenaMonkey(BaseMonkey):
