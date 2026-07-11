@@ -1,7 +1,7 @@
 import random
 from jarvis.config import from_cli, Config
-from jarvis.utils import tqdm, safe_write
-import irc
+from jarvis.utils import tqdm
+from irc.manager import BayesianBeliefManager
 
 from .. import STORE_DIR
 from ..utils import get_valid_blocks, load_monkey_data, align_monkey_data
@@ -10,6 +10,7 @@ from .common import create_env
 
 def main(
     subject: str = 'marco',
+    gamma: float = 1.0,
     no_arena: bool = True,
     bmdp_kw: dict|None = None,
 ):
@@ -19,6 +20,8 @@ def main(
     ----
     subject:
         Subject name.
+    gamma:
+        The shape parameter of Gamma distribution for food schedule.
     no_arena:
         If ``True``, `BanditForagingEnv` will be used and the observation only
         includes action outcome. If ``False``, `ArenaForagingEnv` will be used,
@@ -33,31 +36,33 @@ def main(
     }).asdict()
     if no_arena:
         block_infos = get_valid_blocks(subject, min_pos_ratio=0, min_gaze_ratio=0)
-        block_ids = sorted(block_infos.keys())
+        block_ids = [
+            block_id for block_id in block_infos if block_infos[block_id]['gamma']==gamma
+        ]
     else:
         raise NotImplementedError
     print(f'{len(block_ids)} blocks found for {subject}')
-    random.shuffle(block_ids)
-    for session_id, block_idx in tqdm(block_ids, unit='block'):
-        ckpt_pth = STORE_DIR/'beliefs'/subject/'{}.beliefs_{}[block{}].pkl'.format(
-            'bandit' if no_arena else 'arena', session_id, block_idx,
-        )
-        if not ckpt_pth.exists():
-            safe_write({'bmdp_kw': bmdp_kw}, ckpt_pth)
-        gamma = block_infos[(session_id, block_idx)]['gamma']
-        kappa = block_infos[(session_id, block_idx)]['kappa']
 
-        env = create_env(gamma, kappa, no_arena=no_arena)
-        block_data = load_monkey_data(subject, session_id, block_idx)
-        align_monkey_data(block_data)
-        env_data = env.convert_experiment_data(block_data)
-        agt_states, _, obss, actions = env.extract_episode(env_data)
+    env = create_env(gamma=gamma, no_arena=no_arena)
+    ckpt_dir = STORE_DIR/'beliefs'/subject
+    ckpt_dir /= 'bandit' if no_arena else 'arena'
+    ckpt_dir /= 'Poisson' if gamma==1 else 'Gamma'
+    manager = BayesianBeliefManager(env, ckpt_dir)
 
-        irc.bayesian(
-            env, actions, obss, agt_states,
-            ckpt_pth=ckpt_pth, bmdp_kw=bmdp_kw, allow_interrupt=False,
-            pbar_kw={'desc': f'{session_id}-{block_idx}', 'leave': False},
-        )
+    configs = []
+    for session_id, block_idx in tqdm(block_ids, desc='Load data', unit='block'):
+        data_id = f'{session_id}-{block_idx}'
+        if manager.data_ids.get_key(data_id) is None:
+            block_data = load_monkey_data(subject, session_id, block_idx)
+            align_monkey_data(block_data)
+            env_data = env.convert_experiment_data(block_data)
+            agt_states, _, obss, actions = env.extract_episode(env_data)
+            manager.add_episode(data_id, actions, obss, agt_states)
+        configs.append({
+            'param': env.get_param(), 'data_id': data_id,
+        })
+    random.shuffle(configs)
+    manager.batch(configs, pbar_kw={'desc': 'Compute beliefs'})
 
 
 if __name__=='__main__':
