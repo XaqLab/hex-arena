@@ -57,7 +57,7 @@ class BaseFoodBox:
         self.param_names = []
         if self.cue_in_state:
             self.param_names.append('kappa')
-        if self.tau_in_state:
+        if not self.tau_in_state:
             self.param_names.append('tau')
 
     def __repr__(self) -> str:

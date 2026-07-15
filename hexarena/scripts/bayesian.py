@@ -1,4 +1,3 @@
-import random
 from jarvis.config import from_cli, Config
 from jarvis.utils import tqdm
 from irc.manager import BayesianBeliefManager
@@ -61,7 +60,6 @@ def main(
         configs.append({
             'param': env.get_param(), 'data_id': data_id,
         })
-    random.shuffle(configs)
     manager.batch(configs, pbar_kw={'desc': 'Compute beliefs'})
 
 
