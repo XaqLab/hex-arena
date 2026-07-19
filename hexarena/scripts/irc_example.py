@@ -5,7 +5,6 @@ from irc.manager import RationalPolicyManager
 from irc.example.env import FoodBoxEnv
 
 from .. import STORE_DIR
-from .common import create_env
 
 
 def main(
@@ -41,7 +40,7 @@ def main(
             'gamma': gamma, 'ent_coef': ent_coef,
             **kwargs,
         })
-    manager = RationalPolicyManager(env, STORE_DIR/'rational/irc.example')
+    manager = RationalPolicyManager(env, STORE_DIR/'irc.example/rational')
     manager.batch(configs, n_works=n_works)
 
 
