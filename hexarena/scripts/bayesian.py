@@ -29,10 +29,7 @@ def main(
         Keyword arguments of `BaseBeliefMDP`.
 
     """
-    bmdp_kw = Config(bmdp_kw).fill({
-        'train_kw.n_epochs': 40,
-        'estimate_kw.sga_kw.n_epochs': 60,
-    }).asdict()
+    bmdp_kw = Config(bmdp_kw)
     if no_arena:
         block_infos = get_valid_blocks(subject, min_pos_ratio=0, min_gaze_ratio=0)
         block_ids = [
@@ -58,7 +55,7 @@ def main(
             agt_states, _, obss, actions = env.extract_episode(env_data)
             manager.add_episode(data_id, actions, obss, agt_states)
         configs.append({
-            'param': env.get_param(), 'data_id': data_id,
+            'param': env.get_param(), 'data_id': data_id, 'bmdp_kw': bmdp_kw,
         })
     manager.batch(configs, pbar_kw={'desc': 'Compute beliefs'})
 
