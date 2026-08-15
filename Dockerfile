@@ -1,4 +1,4 @@
-FROM zheli21/pytorch:2.13.0-cp314-cuda132-2404 AS base
+FROM zheli21/pytorch:2.13.0-cp314-cuda126-2404 AS base
 RUN pip install -U h5py --break-system-packages
 
 FROM base AS git-repos
