@@ -73,13 +73,20 @@ def get_valid_blocks(
         num_sessions = len(f['session']['id'])
         block_infos = {}
         for s_idx in range(num_sessions):
-            session_id = ''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]])
+            if subject=='humans':
+                session_id = str(int(f[f['session']['id'][s_idx, 0]][:, 0].item()))
+            else:
+                session_id = ''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]])
             blocks = f[f['session']['block'][s_idx, 0]]
             num_blocks = len(blocks['continuous'])
             for b_idx in range(num_blocks):
                 block = f[blocks['events'][b_idx][0]]
-                tic = np.array(block['tStartBeh'])[0, 0]
-                toc = np.array(block['tEndBeh'])[0, 0]
+                if subject=='humans':
+                    tic = np.array(block['tStart']).item()
+                    toc = np.array(block['tEnd']).item()
+                else:
+                    tic = np.array(block['tStartBeh'])[0, 0]
+                    toc = np.array(block['tEndBeh'])[0, 0]
                 duration = toc-tic
                 if duration<min_duration:
                     continue
@@ -87,7 +94,8 @@ def get_valid_blocks(
 
                 block = f[blocks['continuous'][b_idx][0]]
                 t = np.array(block['t']).squeeze()
-                if np.unique(np.diff(t)).std()>1e-3:
+                dt_th = 0.01 if subject=='humans' else 0.001
+                if np.unique(np.diff(t)).std()>dt_th:
                     continue
                 mask = t<=duration
                 pos_xyz = np.array(block['position']).squeeze()
@@ -184,13 +192,21 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         num_sessions = len(f['session']['id'])
         session_ids = []
         for s_idx in range(num_sessions):
-            session_ids.append(''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]]))
+            if subject=='humans':
+                _session_id = str(int(f[f['session']['id'][s_idx, 0]][:, 0].item()))
+            else:
+                _session_id = ''.join([chr(c) for c in f[f['session']['id'][s_idx, 0]][:, 0]])
+            session_ids.append(_session_id)
         session_idx = session_ids.index(session_id)
         blocks = f[f['session']['block'][session_idx, 0]]
 
         block = f[blocks['events'][block_idx][0]]
-        tic = np.array(block['tStartBeh'])[0, 0]
-        toc = np.array(block['tEndBeh'])[0, 0]
+        if subject=='humans':
+            tic = np.array(block['tStart']).item()
+            toc = np.array(block['tEnd']).item()
+        else:
+            tic = np.array(block['tStartBeh'])[0, 0]
+            toc = np.array(block['tEndBeh'])[0, 0]
         duration = toc-tic
 
         block = f[blocks['continuous'][block_idx][0]]
@@ -204,13 +220,14 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
                 block_data[key] = block_data[key][mask]
             else:
                 block_data[key] = np.full((mask.sum(), 3), fill_value=np.nan)
-        block_data['eye_h'] = np.array(block['eyeH']).squeeze()
-        block_data['eye_v'] = np.array(block['eyeV']).squeeze()
-        for key in ['eye_h', 'eye_v']:
-            if block_data[key].shape==(len(block_data['t'],)):
-                block_data[key] = block_data[key][mask]
-            else:
-                block_data[key] = np.full((mask.sum(),), fill_value=np.nan)
+        if subject!='humans': # field only exist for monkey data
+            block_data['eye_h'] = np.array(block['eyeH']).squeeze()
+            block_data['eye_v'] = np.array(block['eyeV']).squeeze()
+            for key in ['eye_h', 'eye_v']:
+                if block_data[key].shape==(len(block_data['t'],)):
+                    block_data[key] = block_data[key][mask]
+                else:
+                    block_data[key] = np.full((mask.sum(),), fill_value=np.nan)
         block_data['t'] = block_data['t'][mask]
         block_data['cues'] = np.stack([
             np.array(block['visualCueSignal'][f'box{i}']).squeeze() for i in [2, 3, 1]
@@ -228,13 +245,14 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         assert len(np.unique(block_data['kappas']))==1, "Noise level should be the same for all boxes."
         tau2, tau0, tau1 = np.array(block['schedules']).squeeze()
         block_data['taus'] = np.array([tau0, tau1, tau2])
-        intervals2 = np.array(block['rewardWaitTime']['box1']).squeeze()
-        intervals0 = np.array(block['rewardWaitTime']['box2']).squeeze()
-        intervals1 = np.array(block['rewardWaitTime']['box3']).squeeze()
-        block_data['intervals'] = [intervals0, intervals1, intervals2]
-        for i in range(3):
-            if len(block_data['intervals'][i].shape)==0:
-                block_data['intervals'][i] = block_data['intervals'][i].reshape((1,))
+        if 'rewardWaitTime' in block:
+            intervals2 = np.array(block['rewardWaitTime']['box1']).squeeze()
+            intervals0 = np.array(block['rewardWaitTime']['box2']).squeeze()
+            intervals1 = np.array(block['rewardWaitTime']['box3']).squeeze()
+            block_data['intervals'] = [intervals0, intervals1, intervals2]
+            for i in range(3):
+                if len(block_data['intervals'][i].shape)==0:
+                    block_data['intervals'][i] = block_data['intervals'][i].reshape((1,))
     return block_data
 
 
@@ -304,7 +322,8 @@ def align_monkey_data(block_data: dict) -> None:
     block_data['push_idx'] = push_idx
     block_data['cues'] = block_data['cues'][:, new_order]
     block_data['taus'] = block_data['taus'][new_order]
-    block_data['intervals'] = [block_data['intervals'][i] for i in new_order]
+    if 'intervals' in block_data:
+        block_data['intervals'] = [block_data['intervals'][i] for i in new_order]
 
 
 def get_food_avails(
