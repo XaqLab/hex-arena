@@ -294,11 +294,14 @@ class BaseForagingEnv(Env):
                 first_rewarded = block_data['push_flag'][block_data['push_idx']==b_idx][0].item()
             else:
                 tau, first_rewarded = None, None
-            foods.append(get_food_avails(
-                block_data['push_t'][block_data['push_idx']==b_idx],
-                block_data['intervals'][b_idx], n_steps, dt=self.dt,
-                tau=tau, first_rewarded=first_rewarded,
-            ))
+            if 'intervals' in block_data:
+                foods.append(get_food_avails(
+                    block_data['push_t'][block_data['push_idx']==b_idx],
+                    block_data['intervals'][b_idx], n_steps, dt=self.dt,
+                    tau=tau, first_rewarded=first_rewarded,
+                ))
+            else:
+                foods.append(np.full((n_steps,), fill_value=np.nan))
         foods = np.stack(foods, axis=1)
 
         env_data = {

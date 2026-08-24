@@ -245,7 +245,7 @@ def load_monkey_data(subject: str, session_id: str, block_idx: int) -> dict:
         assert len(np.unique(block_data['kappas']))==1, "Noise level should be the same for all boxes."
         tau2, tau0, tau1 = np.array(block['schedules']).squeeze()
         block_data['taus'] = np.array([tau0, tau1, tau2])
-        if 'rewardWaitTime' in block:
+        if 'rewardWaitTime' in block: # TODO infer rewardWaitTime for human data
             intervals2 = np.array(block['rewardWaitTime']['box1']).squeeze()
             intervals0 = np.array(block['rewardWaitTime']['box2']).squeeze()
             intervals1 = np.array(block['rewardWaitTime']['box3']).squeeze()
