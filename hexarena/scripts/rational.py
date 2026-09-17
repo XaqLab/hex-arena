@@ -10,6 +10,7 @@ from .common import create_env
 def main(
     bandit: bool = True,
     spec_pth: str = 'rational.spec.yaml',
+    n_epochs: int|None = None,
     n_works: int|None = None,
     **kwargs,
 ):
@@ -50,7 +51,7 @@ def main(
                 **kwargs,
             })
     manager = RationalPolicyManager(env, STORE_DIR/'rational')
-    manager.batch(configs, n_works=n_works)
+    manager.batch(configs, n_epochs=n_epochs, n_works=n_works)
 
 
 if __name__=='__main__':
