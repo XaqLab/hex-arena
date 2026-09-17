@@ -51,3 +51,8 @@ in `{0, 1, ..., N}`. When `push==True`, `move` can only take three values, namel
 tiles where three boxes are mounted.
 
 Please refer to the [notebook](env-example.ipynb) for more details.
+
+docker run -it --rm --pull always -p 8888:8888 \
+    --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/data,destination=/hex-arena/data \
+    --mount type=bind,source=/mnt/scratch09/zhe/hex-arena/store,destination=/hex-arena/store \
+    zheli21/hexarena
