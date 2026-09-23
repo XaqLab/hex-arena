@@ -21,7 +21,8 @@ class BaseMonkey:
     vis_field:
         A number in (0, 1] specifying the size of visual field for integrating
         color cues. For example `integrate_area=0.5` means a random patch of
-        size 0.5x0.5 on the monitor is integrated to get the mean color.
+        size 0.5x0.5 on the monitor is integrated to get the mean color. If
+        ``None``, the monkey will not have visual observation.
 
     """
 
@@ -29,13 +30,14 @@ class BaseMonkey:
         *,
         time_cost: float = 0.,
         push_cost: float = 0.,
-        vis_field: float = 0.8,
+        vis_field: float|None = 0.8,
     ):
         self.time_cost = time_cost
         self.push_cost = push_cost
         self.vis_field = vis_field
 
         self.state_space = Dict({})
+        self.rng = np.random.default_rng()
 
     def __str__(self) -> str:
         return "Monkey with push cost {:g}".format(self.push_cost)
@@ -132,8 +134,8 @@ class ArenaMonkey(BaseMonkey):
     arena:
         The arena in which the monkey plays in.
     turn_price:
-        Price of turning, in units of 1/deg. It will be multiplied by the
-        turning angle before/after moving to get turning cost.
+        Price of turning per 30 degrees. It will be computed with the turning
+        angle to get turning cost.
     move_price:
         Price of moving, in units of 1/(1^2). It will be multiplied by the
         square of distance to get moving cost.
@@ -143,10 +145,13 @@ class ArenaMonkey(BaseMonkey):
 
     """
 
+    pos: int    # position of the monkey in the arena, [0, n_tiles)
+    facing: int # facing direction in [0, 12), starting from east, counter-clockwise
+
     def __init__(self,
         arena: Arena|dict|None = None,
         *,
-        turn_price: float = 0.001,
+        turn_price: float = 0.1,
         move_price: float = 0.,
         center_cost: float = 0.1,
         **kwargs,
@@ -161,17 +166,14 @@ class ArenaMonkey(BaseMonkey):
         self.move_price = move_price
         self.center_cost = center_cost
 
-        # state: (pos, gaze)
         self.state_space = Dict({
             'pos': Discrete(self.arena.n_tiles),
-            'gaze': Discrete(self.arena.n_tiles),
+            'facing': Discrete(12), # every 30 degrees
         })
-        # action: (push, move, look)
-        self.action_space = Discrete(self.arena.n_boxes*self.arena.n_tiles+self.arena.n_tiles**2)
+        self.action_space = Discrete(self.arena.n_tiles+self.arena.n_boxes) # (push, move)
 
         rs = (np.array(self.arena.anchors)**2).sum(axis=1)**0.5
         self.stay_costs = self.center_cost*(1-rs)
-        self.rng = np.random.default_rng()
 
     def __str__(self) -> str:
         arena_str = str(self.arena)
@@ -198,8 +200,8 @@ class ArenaMonkey(BaseMonkey):
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.pos: int = self.rng.choice(self.arena.n_tiles)
-        self.gaze: int = self.rng.choice(self.arena.n_tiles)
+        self.pos = self.rng.choice(self.arena.n_tiles)
+        self.facing = self.rng.choice(6)
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
@@ -222,12 +224,13 @@ class ArenaMonkey(BaseMonkey):
 
     def get_state(self) -> dict[str, int]:
         r"""Returns monkey state."""
-        state = {'pos': self.pos, 'gaze': self.gaze}
+        state = {'pos': self.pos, 'facing': self.facing}
         return state
 
     def set_state(self, state: dict[str, int]) -> None:
         r"""Sets the monkey state."""
-        self.pos, self.gaze = state['pos'], state['gaze']
+        self.pos = state['pos']
+        self.facing = state['facing']
 
     def _direction(self, end: int, start: int) -> float|None:
         if end==start:
@@ -242,39 +245,35 @@ class ArenaMonkey(BaseMonkey):
         delta = np.mod(theta_0-theta_1+np.pi, 2*np.pi)-np.pi
         return np.abs(delta)/np.pi*180
 
-    def convert_action(self, action: int) -> tuple[bool, int, int]:
+    def convert_action(self, action: int) -> tuple[bool, int]:
         r"""Converts action integer to interpretable variables.
 
         Args
         ----
         action:
-            An integer in [0, num_tiles^2+num_boxes*num_tiles). `action` in
-            [0, num_tiles^2) means moving and looking only. `action` in
-            [num_tiles^2, num_tiles^2+num_boxes*num_tiles) means moving to a box
-            and push, combined with looking.
+            An integer in `[0, n_tiles+n_boxes)`. `action<n_tiles` means moving
+            without pushing, and `action>=n_tiles` means pushing one of the
+            boxes.
 
         Returns
         -------
         push:
             Whether to push the button of food box.
         move:
-            An integer in [0, num_tiles) for the desired tile of moving to.
-        look:
-            An integer in [0, num_tiles) for the desired tile of looking at.
+            An integer in `[0, n_tiles)` for the desired tile of moving to. If
+            `push` is ``True``, `move` is position of one box.
 
         """
         action = int(action)
-        if action<self.arena.n_tiles**2:
+        if action<self.arena.n_tiles:
             push = False
-            move = action//self.arena.n_tiles
-            look = action%self.arena.n_tiles
+            move = action
         else:
             push = True
-            move = self.arena.boxes[(action-self.arena.n_tiles**2)//self.arena.n_tiles]
-            look = (action-self.arena.n_tiles**2)%self.arena.n_tiles
-        return push, move, look
+            move = self.arena.boxes[action-self.arena.n_tiles]
+        return push, move
 
-    def index_action(self, push: bool, move: int, look: int) -> int:
+    def index_action(self, push: bool, move: int) -> int:
         r"""Returns action index given interpretable variables.
 
         Args
@@ -290,14 +289,14 @@ class ArenaMonkey(BaseMonkey):
         """
         if push:
             b_idx = self.arena.boxes.index(move)
-            action = self.arena.n_tiles**2+b_idx*self.arena.n_tiles+look
+            action = self.arena.n_tiles+b_idx
         else:
-            action = move*self.arena.n_tiles+look
+            action = move
         return action
 
     def merge_actions(self,
         actions: Iterable[int],
-        num_macros: int = 10,
+        n_macros: int = 10,
     ) -> list[int]:
         r"""Merges primitive actions to macro actions.
 
@@ -306,27 +305,27 @@ class ArenaMonkey(BaseMonkey):
 
         Args
         ----
-        actions: (num_steps,)
+        actions: int, `(n_steps,)`
             Sequence of primitive actions.
-        num_actions:
-            Macro action space size. 'num_macros=10' involves 3 push actions and
-            7 move actions. See comments for more details. 'num_macros=22'
+        n_macros:
+            Macro action space size. 'n_macros=10' involves 3 push actions and
+            7 move actions. See comments for more details. 'n_macros=22'
             involves 3 push actions and 19 move actions, for arena size of 2.
 
         Returns
         -------
-        macros: (num_steps,)
+        macros: int, `(n_steps,)`
             Sequence of macro actions.
 
         """
         if not (self.arena.n_tiles==19 and self.arena.n_boxes==3):
             raise NotImplementedError("Only works on the arena with 'resol=2'")
-        if num_macros not in [10, 22]:
-            raise NotImplementedError(f"`num_macros={num_macros}` is not supported")
+        if n_macros not in [10, 22]:
+            raise NotImplementedError(f"`n_macros={n_macros}` is not supported")
         macros = []
         for action in actions:
-            push, move, _ = self.convert_action(action) # `look` is ignored
-            if num_macros==10:
+            push, move = self.convert_action(action) # `look` is ignored
+            if n_macros==10:
                 if push:
                     macro = self.arena.boxes.index(move) # [0, 3) for push actions
                 else:
@@ -344,7 +343,7 @@ class ArenaMonkey(BaseMonkey):
                         macro = 8
                     if move==18: # between box 2-0
                         macro = 9
-            if num_macros==22:
+            if n_macros==22:
                 if push:
                     macro = self.arena.boxes.index(move)
                 else:
@@ -352,39 +351,44 @@ class ArenaMonkey(BaseMonkey):
             macros.append(macro)
         return macros
 
-    def step(self, push: bool, move: int, look: int) -> float:
+    def step(self, push: bool, move: int) -> float:
         r"""Monkey acts for one step.
+
+        New facing direction is decided by the moving direction, or the box
+        position if the monkey pushes. It is used to compute the turning cost.
 
         Args
         ----
-        push, move, look:
+        push, move:
             See `convert_action` for more details.
 
         Returns
         -------
         reward:
             Endogenous reward to the monkey, i.e. the summation of time cost,
-            push cost, turning cost, moving cost and staying cost.
+            push cost, turning cost, moving cost and staying cost. Typically a
+            negative number.
 
         """
+        # time cost and push cost
         reward = super().step(push)
-        # turning cost before moving
-        phi = self._direction(self.gaze, self.pos) # face direction
-        theta = self._direction(move, self.pos) # moving direction
-        if not(phi is None or theta is None):
-            reward -= self.turn_price*self._delta_deg(theta, phi)
+        # turning cost
+        if push:
+            b_idx = self.arena.boxes.index(move)
+            facing_new = 4*b_idx+1
         else:
-            theta = theta or phi # for look cost later
+            theta = self._direction(move, self.pos)
+            if theta is None:
+                facing_new = self.facing
+            else:
+                facing_new = np.round(np.mod(theta/(np.pi/6)+0.5, 12)-0.5)
+        reward -= self.turn_price*np.abs(np.mod(facing_new-self.facing+6, 12)-6)
+        self.facing = facing_new
         # moving cost
         dxy = np.array(self.arena.anchors[move])-np.array(self.arena.anchors[self.pos])
         d2 = (dxy**2).sum()
         reward -= self.move_price*d2
         self.pos = move
-        self.gaze = look
-        # turning cost after moving
-        phi = self._direction(self.gaze, self.pos) # new face direction
-        if not(phi is None or theta is None):
-            reward -= self.turn_price*self._delta_deg(theta, phi)
         # staying cost
         reward -= self.stay_costs[move]
         return reward
