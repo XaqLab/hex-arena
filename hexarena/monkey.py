@@ -381,7 +381,7 @@ class ArenaMonkey(BaseMonkey):
             if theta is None:
                 facing_new = self.facing
             else:
-                facing_new = np.round(np.mod(theta/(np.pi/6)+0.5, 12)-0.5).item()
+                facing_new = int(np.round(np.mod(theta/(np.pi/6)+0.5, 12)-0.5))
         reward -= self.turn_price*np.abs(np.mod(facing_new-self.facing+6, 12)-6)
         self.facing = facing_new
         # moving cost
