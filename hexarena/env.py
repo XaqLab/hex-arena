@@ -31,6 +31,8 @@ class BaseForagingEnv(Env):
         The food boxes or a list of dictionaries to specify them.
     dt:
         Time step size, in seconds.
+    use_vision:
+        Whether visual feedback is used by the monkey.
     shared_param_names:
         Shared parameter names of boxes, this reduces the number of parameters
         of the environment.
@@ -41,6 +43,7 @@ class BaseForagingEnv(Env):
         monkey: BaseMonkey|dict|None = None,
         boxes: list[BaseFoodBox|dict|None]|None = None,
         dt: float = 1.,
+        use_vision: bool = False,
         shared_param_names: list[str]|None = None,
     ):
         self.dt = dt
@@ -66,12 +69,17 @@ class BaseForagingEnv(Env):
                 box: BaseFoodBox = box.instantiate()
             box.dt = self.dt
             self.boxes.append(box)
+        self.use_vision = use_vision
 
         self.agt_space = self.monkey.state_space
         self.env_space = Dict({
             f'box_{i}': self.boxes[i].state_space for i in range(self.n_boxes)
         })
         self.obs_space: Dict = Dict({'rewarded': Discrete(2)})
+        if use_vision:
+            self.obs_space.spaces.update({
+                'color': Box(-np.inf, np.inf, shape=(2,)),
+            })
         self.rng = np.random.default_rng()
 
     @property
@@ -98,6 +106,10 @@ class BaseForagingEnv(Env):
     def get_obs(self, rewarded: bool) -> dict:
         r"""Returns observation of environment.
 
+        Besides whether it gets rewarded, the monkey gets color observation from
+        the box it is looking at. When the monkey is not looking at any box,
+        color observation `(0, 0)` will be returned instead.
+
         Args
         ----
         rewarded:
@@ -111,6 +123,14 @@ class BaseForagingEnv(Env):
 
         """
         obs = {'rewarded': int(rewarded)}
+        if self.use_vision:
+            ... # TODO add color observation
+            # box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
+            # obs.update({
+            #     'color': np.array(
+            #         (0., 0.) if box is None else self.monkey.look(box.colors)
+            #     ),
+            # })
         return obs
 
     def _get_observation_and_info(self, rewarded: bool) -> tuple[dict, dict]:
@@ -150,11 +170,13 @@ class BaseForagingEnv(Env):
             info['colors'] = np.stack([box.colors for box in self.boxes])
         return observation, info
 
+    # reward parameters
     def get_param_r(self) -> EnvParam:
         return self.monkey.get_param()
     def set_param_r(self, param_r: EnvParam) -> None:
         self.monkey.set_param(param_r)
 
+    # dynamics parameters
     def get_param_d(self) -> EnvParam:
         param_d = []
         for name in self.shared_param_names:
@@ -386,8 +408,7 @@ class BaseForagingEnv(Env):
 class BanditForagingEnv(BaseForagingEnv):
     r"""Foraging environment similar to multi-armed bandit problem.
 
-    Spatial and visual aspect of the food boxes are ignored, therefore the
-    monkey only chooses to push one of the boxes or not push at each time step.
+    The monkey chooses to push one of the boxes or not push at each time step.
 
     """
 
@@ -444,41 +465,11 @@ class ArenaForagingEnv(BaseForagingEnv):
         assert self.arena.n_boxes==self.n_boxes
         for i in range(self.n_boxes):
             self.boxes[i].pos = self.arena.boxes[i]
-
-        self.obs_space = Dict({
-            'color': Box(-np.inf, np.inf, shape=(2,)),
-            'rewarded': Discrete(2),
-        })
         self.action_space = self.monkey.action_space
 
-    def get_obs(self, rewarded: bool) -> dict:
-        r"""Returns observation of environment.
-
-        Besides whether it gets rewarded, the monkey gets color observation from
-        the box it is looking at. When the monkey is not looking at any box,
-        color observation `(0, 0)` will be returned instead.
-
-        Returns
-        -------
-        obs:
-            A dictionary with keys:
-            - 'rewarded': binary variable of whether rewarded or not.
-            - 'color': circular coordinates of seen color, see `Monkey.look` for
-            more details.
-
-        """
-        obs = super().get_obs(rewarded)
-        box = next((box for box in self.boxes if self.monkey.gaze==box.pos), None)
-        obs.update({
-            'color': np.array(
-                (0., 0.) if box is None else self.monkey.look(box.colors)
-            ),
-        })
-        return obs
-
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
-        push, move, look = self.monkey.convert_action(action)
-        reward = self.monkey.step(push, move, look)
+        push, move = self.monkey.convert_action(action)
+        reward = self.monkey.step(push, move)
         rewarded = False
         for box in self.boxes:
             _reward = box.step(push and move==box.pos)
