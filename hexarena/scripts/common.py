@@ -51,6 +51,7 @@ def create_env(
     gamma: float = 1., kappa: float = 0.1,
     taus: list[float]|None = None,
     no_arena: bool = False,
+    cue_in_state: bool = False,
     tau_in_state: bool = False,
     env_kw: dict|None = None,
 ) -> BaseForagingEnv:
@@ -71,13 +72,15 @@ def create_env(
     no_arena:
         Whether the arena is disabled or not. When ``True``, `BanditForagingEnv`
         will be used.
-    env:
+    cue_in_state, tau_in_state:
+        Arguments of food boxes, see `BaseFoodBox` for more details.
+    env_kw:
         Additional keyword arguments of a `BaseForagingEnv` object. It won't
         overwrite the default specification set by other arguments.
 
     Returns
     -------
-    env_kw:
+    env:
         A default environment with boxes sorted from worst to best.
 
     """
@@ -100,7 +103,7 @@ def create_env(
     env = env_cls(
         boxes=[{
             '_target_': box, 'kappa': kappa, 'tau': tau,
-            'cue_in_state': not no_arena,
+            'cue_in_state': cue_in_state,
             'tau_in_state': tau_in_state,
         } for tau in taus], **({} if env_kw is None else env_kw),
     )
