@@ -201,7 +201,7 @@ class ArenaMonkey(BaseMonkey):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         self.pos = self.rng.choice(self.arena.n_tiles)
-        self.facing = self.rng.choice(6)
+        self.facing = self.rng.choice(12)
 
     def get_param(self) -> EnvParam:
         r"""Returns monkey parameters."""
