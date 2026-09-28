@@ -36,6 +36,11 @@ def main(
     """
     if gamma!=1:
         raise NotImplementedError("Only exponential schedule is supported.")
+    store_dir = STORE_DIR/'rational'/'[{}][{}][gamma{}]'.format(
+        'bandit' if no_arena else 'arena',
+        'visual' if cue_in_state else 'blind',
+        str(int(gamma)),
+    )
     env = create_env(gamma=gamma, no_arena=no_arena, cue_in_state=cue_in_state)
     with open(STORE_DIR/spec_pth, 'r') as f:
         spec = yaml.safe_load(f)
@@ -69,11 +74,6 @@ def main(
                     'gamma': gamma, 'ent_coef': ent_coef,
                     **kwargs,
                 })
-    store_dir = STORE_DIR/'rational'/'[{}][{}][gamma{}]'.format(
-        'bandit' if no_arena else 'arena',
-        'visual' if cue_in_state else 'blind',
-        str(int(gamma)),
-    )
     manager = RationalPolicyManager(env, store_dir)
     manager.batch(configs, n_epochs=n_epochs, n_works=n_works)
 
