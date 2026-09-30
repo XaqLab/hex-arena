@@ -9,7 +9,7 @@ from .common import create_env
 
 def main(
     gamma: float = 1.,
-    no_arena: bool = False,
+    arena_resol: int|None = None,
     cue_in_state: bool = False,
     spec_pth: str = 'rational.spec.yaml',
     n_epochs: int|None = None,
@@ -37,11 +37,17 @@ def main(
     if gamma!=1:
         raise NotImplementedError("Only exponential schedule is supported.")
     store_dir = STORE_DIR/'rational'/'[{}][{}][gamma{}]'.format(
-        'bandit' if no_arena else 'arena',
+        'bandit' if arena_resol is None else f'arena-{arena_resol}',
         'visual' if cue_in_state else 'blind',
         str(int(gamma)),
     )
-    env = create_env(gamma=gamma, no_arena=no_arena, cue_in_state=cue_in_state)
+    if arena_resol is None:
+        env = create_env(gamma=gamma, no_arena=True, cue_in_state=cue_in_state)
+    else:
+        env = create_env(
+            gamma=gamma, no_arena=False, cue_in_state=cue_in_state,
+            env_kw={'arena': {'resol': arena_resol}},
+        )
     with open(STORE_DIR/spec_pth, 'r') as f:
         spec = yaml.safe_load(f)
     taus = spec.pop('taus', [15., 21., 35.])
@@ -50,7 +56,7 @@ def main(
     for perm in permutations(range(env.n_boxes)):
         for i in range(env.n_boxes):
             env.boxes[i].tau = taus[perm[i]]
-        if no_arena:
+        if arena_resol is None:
             for seed, gamma, ent_coef, push_cost in product(
                 spec['seed'], spec['gamma'], spec['ent_coef'], spec['push_cost'],
             ):
