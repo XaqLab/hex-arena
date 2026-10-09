@@ -74,7 +74,7 @@ def main(
                 env.monkey.push_cost = push_cost
                 env.monkey.turn_price = turn_price
                 env.monkey.move_price = move_price
-                env.center_cost = center_cost
+                env.monkey.center_cost = center_cost
                 configs.append({
                     'param': env.get_param(), 'seed': seed,
                     'gamma': gamma, 'ent_coef': ent_coef,
