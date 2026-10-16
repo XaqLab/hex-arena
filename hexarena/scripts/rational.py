@@ -1,7 +1,7 @@
 import yaml
 from itertools import product, permutations
 from jarvis.config import from_cli
-from irc.manager import RationalPolicyManager
+from irc import rational
 
 from .. import STORE_DIR
 from .common import create_env
@@ -13,7 +13,7 @@ def main(
     cue_in_state: bool = False,
     spec_pth: str = 'rational.spec.yaml',
     n_epochs: int|None = None,
-    n_works: int|None = None,
+    n_policies: int|None = None,
     **kwargs,
 ):
     r"""Trains rational policy by manager.
@@ -27,16 +27,15 @@ def main(
         environment with Poisson boxes is used.
     spec_pth:
         Path to the yaml file that specifies the parameter grid.
-    n_works:
+    n_epochs:
+        Number of training epochs.
+    n_policies:
         Number of rational policies to be trained in total.
-    kwargs:
-        Additional keyword arguments to specify rational policy configuration,
-        see `RationalPolicyManager.setup` for more details.
 
     """
     if gamma!=1:
         raise NotImplementedError("Only exponential schedule is supported.")
-    store_dir = STORE_DIR/'rational'/'[{}][{}][gamma{}]'.format(
+    store_dir = STORE_DIR/'[{}][{}][gamma{}]'.format(
         'bandit' if arena_resol is None else f'arena-{arena_resol}',
         'visual' if cue_in_state else 'blind',
         str(int(gamma)),
@@ -52,36 +51,29 @@ def main(
         spec = yaml.safe_load(f)
     taus = spec.pop('taus', [15., 21., 35.])
     assert len(taus)==env.n_boxes, f"Expect {env.n_boxes} different tau values."
-    configs = []
+    params = []
     for perm in permutations(range(env.n_boxes)):
         for i in range(env.n_boxes):
             env.boxes[i].tau = taus[perm[i]]
-        if arena_resol is None:
-            for seed, gamma, ent_coef, push_cost in product(
-                spec['seed'], spec['gamma'], spec['ent_coef'], spec['push_cost'],
-            ):
-                env.monkey.push_cost = push_cost
-                configs.append({
-                    'param': env.get_param(), 'seed': seed,
-                    'gamma': gamma, 'ent_coef': ent_coef,
-                    **kwargs,
-                })
-        else:
-            for seed, gamma, ent_coef, push_cost, turn_price, move_price, center_cost in product(
-                spec['seed'], spec['gamma'], spec['ent_coef'], spec['push_cost'],
-                spec['turn_price'], spec['move_price'], spec['center_cost'],
-            ):
-                env.monkey.push_cost = push_cost
-                env.monkey.turn_price = turn_price
-                env.monkey.move_price = move_price
-                env.monkey.center_cost = center_cost
-                configs.append({
-                    'param': env.get_param(), 'seed': seed,
-                    'gamma': gamma, 'ent_coef': ent_coef,
-                    **kwargs,
-                })
-    manager = RationalPolicyManager(env, store_dir)
-    manager.batch(configs, n_epochs=n_epochs, n_works=n_works)
+            if arena_resol is None:
+                for push_cost in spec['push_cost']:
+                    env.monkey.push_cost = push_cost
+                    params.append(env.get_param())
+            else:
+                for push_cost, turn_price, move_price, center_cost in product(
+                    spec['push_cost'], spec['turn_price'], spec['move_price'], spec['center_cost'],
+                ):
+                    env.monkey.push_cost = push_cost
+                    env.monkey.turn_price = turn_price
+                    env.monkey.move_price = move_price
+                    env.monkey.center_cost = center_cost
+                    params.append(env.get_param())
+    rational(
+        env, params, use_belief=False, seeds=spec['seed'],
+        gammas=spec['gamma'], ent_coefs=spec['ent_coef'],
+        min_epoch=n_epochs, n_policies=n_policies,
+        cache_dir=store_dir,
+    )
 
 
 if __name__=='__main__':
