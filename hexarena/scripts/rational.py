@@ -35,7 +35,7 @@ def main(
     """
     if gamma!=1:
         raise NotImplementedError("Only exponential schedule is supported.")
-    store_dir = STORE_DIR/'[{}][{}][gamma{}]'.format(
+    cache_dir = STORE_DIR/'[{}][{}][gamma{}]'.format(
         'bandit' if arena_resol is None else f'arena-{arena_resol}',
         'visual' if cue_in_state else 'blind',
         str(int(gamma)),
@@ -69,10 +69,10 @@ def main(
                     env.monkey.center_cost = center_cost
                     params.append(env.get_param())
     rational(
-        env, params, use_belief=False, seeds=spec['seed'],
+        env, params, belief_mode='none', seeds=spec['seed'],
         gammas=spec['gamma'], ent_coefs=spec['ent_coef'],
         min_epoch=n_epochs, n_policies=n_policies,
-        cache_dir=store_dir,
+        cache_dir=cache_dir, show_summary=True,
     )
 
 
