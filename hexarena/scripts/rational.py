@@ -12,7 +12,7 @@ def main(
     arena_resol: int|None = None,
     cue_in_state: bool = False,
     spec_pth: str = 'rational.spec.yaml',
-    n_epochs: int|None = None,
+    min_epoch: int|None = None,
     n_policies: int|None = None,
     **kwargs,
 ):
@@ -27,8 +27,8 @@ def main(
         environment with Poisson boxes is used.
     spec_pth:
         Path to the yaml file that specifies the parameter grid.
-    n_epochs:
-        Number of training epochs.
+    min_epoch:
+        Mininum number of training epochs.
     n_policies:
         Number of rational policies to be trained in total.
 
@@ -71,7 +71,7 @@ def main(
     rational(
         env, params, belief_mode='none', seeds=spec['seed'],
         gammas=spec['gamma'], ent_coefs=spec['ent_coef'],
-        min_epoch=n_epochs, n_policies=n_policies,
+        min_epoch=min_epoch, n_policies=n_policies,
         cache_dir=cache_dir, show_summary=True,
     )
 
