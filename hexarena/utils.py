@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 import h5py
 import numpy as np
-from irc.utils.ppo import ProgressBarCallback as _ProgressBarCallback
 
 from . import DATA_DIR
 from .alias import Array
@@ -377,22 +376,3 @@ def get_food_avails(
         toc = int(np.ceil((push_t[i]+intervals[i+1])/dt))
         foods[tic:toc] = False
     return foods
-
-
-class ProgressBarCallback(_ProgressBarCallback):
-    r"""Callback for update progress bar with recent running statistics."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.food = None # frequency of getting food
-
-    def _update_logs(self) -> None:
-        self.logs.append((self.reward, self.food))
-
-    def _get_pbar_desc(self) -> str:
-        return super()._get_pbar_desc()+"[Food {:.2f}]".format(self.food)
-
-    def _on_step(self) -> bool:
-        food = np.mean([float(info['obs']['rewarded']) for info in self.locals['infos']]).item()
-        self.food = food if self.food is None else self.gamma*self.food+(1-self.gamma)*food
-        return super()._on_step()
