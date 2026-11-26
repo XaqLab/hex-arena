@@ -229,6 +229,11 @@ class BaseForagingEnv(Env):
                     high += _high
         return low, high
 
+    @property
+    def param_space(self) -> Box:
+        low, high = self.param_bounds()
+        return Box(low=np.array(low), high=np.aray(high))
+
     def reset(self, seed: int|None = None, options: dict|None = None) -> tuple[dict, dict]:
         r"""Resets environment."""
         if seed is not None:
@@ -623,35 +628,47 @@ class ArenaForagingEnv(BaseForagingEnv):
 
     def _extract_agt_states(self, env_data: dict) -> list[dict]:
         r"""Extracts monkey states."""
-        n_steps = len(env_data['push'])
-        _agt_states = {
-            'pos': np.empty((n_steps+1,), dtype=int),
-            'gaze': np.empty((n_steps+1,), dtype=int),
-        }
-        for key in _agt_states:
-            vals = env_data[key]
-            for t in range(n_steps+1):
-                if vals[t]>=0:
-                    _agt_states[key][t] = vals[t]
-                else: # deal with data gap
-                    if t>0:
-                        _agt_states[key][t] = _agt_states[key][t-1] # previous step
-                    else:
-                        _agt_states[key][t] = vals[(vals>=0).nonzero()[0].min()] # first valid step
-        agt_states = [{key: _agt_states[key][t].item() for key in _agt_states} for t in range(n_steps+1)]
+        def fill_nans(x):
+            i = np.nonzero(~np.isnan(x))[0][0]
+            if i>0:
+                x[:i] = x[i]
+            for i in range(1, len(x)):
+                if np.isnan(x[i]):
+                    x[i] = x[i-1]
+
+        push = env_data['push']
+        idxs, = (push>=0).nonzero()
+        n_steps = len(push)
+
+        pos = env_data['pos'].copy().astype(float); pos[pos<0] = np.nan; fill_nans(pos)
+        pos[idxs+1] = np.array(self.arena.boxes)[env_data['push'][idxs]]
+
+        gaze = env_data['gaze'].copy().astype(float); gaze[gaze<0] = np.nan; fill_nans(gaze)
+        theta = np.array([
+            self.monkey._direction(int(gaze[i]), int(pos[i])) for i in range(n_steps+1)
+        ]).astype(float)
+        facing = np.round(np.mod(theta/(np.pi/6)+0.5, 12)-0.5)
+        facing[idxs+1] = 4*push[idxs]+1
+        fill_nans(facing)
+
+        agt_states = [{
+            'pos': int(pos[i]), 'facing': int(facing[i]),
+        } for i in range(n_steps+1)]
         return agt_states
 
     def _extract_obss(self, env_data: dict):
         obss = super()._extract_obss(env_data)
-        n_steps = len(env_data['push'])
-        self.reset(seed=0) # remove stochasticity of monkey 'look' method
-        for t in range(n_steps+1):
-            b_idx = next((i for i, box in enumerate(self.boxes) if env_data['gaze'][t]==box.pos), None)
-            obss[t].update({
-                'color': np.array(
-                    (0., 0.) if b_idx is None else self.monkey.look(env_data['colors'][t, b_idx])
-                ),
-            })
+        if self.use_vision:
+            ... # TODO
+            # n_steps = len(env_data['push'])
+            # self.reset(seed=0) # remove stochasticity of monkey 'look' method
+            # for t in range(n_steps+1):
+            #     b_idx = next((i for i, box in enumerate(self.boxes) if env_data['gaze'][t]==box.pos), None)
+            #     obss[t].update({
+            #         'color': np.array(
+            #             (0., 0.) if b_idx is None else self.monkey.look(env_data['colors'][t, b_idx])
+            #         ),
+            #     })
         return obss
 
     def extract_episode(self, env_data: dict) -> tuple[list, list, list, Array]:
@@ -663,8 +680,7 @@ class ArenaForagingEnv(BaseForagingEnv):
         actions = []
         for t in range(n_steps):
             actions.append(self.monkey.index_action(
-                env_data['push'][t]>=0,
-                agt_states[t+1]['pos'], agt_states[t+1]['gaze'],
+                env_data['push'][t]>=0, agt_states[t+1]['pos'],
             ))
         actions = np.array(actions).astype(int)
         return agt_states, env_states, obss, actions
